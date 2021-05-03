@@ -23,7 +23,7 @@ program main
   call SetGeometry
   
   !OpenMP GPU parallelization: global offloading
-  !$OMP TARGET DATA map(to:t,e,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id) device(0)
+  !$OMP TARGET DATA map(to:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id) device(0)
   !Device number to be changed for cross node implementations.
   
   !Initialize u,p

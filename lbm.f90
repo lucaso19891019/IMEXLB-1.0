@@ -96,9 +96,7 @@ contains
 
     !OpenMP and MPI synchronization before propagation:
     !$OMP TARGET UPDATE from(fb)
-    !$OMP SINGLE
     call PassF(fb)
-    !$OMP END SINGLE
     !$OMP TARGET UPDATE to(fb)
     
 
@@ -214,7 +212,6 @@ contains
 
     !$OMP TARGET UPDATE from(u,p)
     
-    !$OMP SINGLE  
     write(filename,'(A)')"output.dat"
     call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_EXCL+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     if(ierr.ne.MPI_SUCCESS)then
@@ -260,9 +257,7 @@ contains
     
     call MPI_BARRIER(CART_COMM,ierr)
     call MPI_FILE_CLOSE(file,ierr)
-    
 
-    !$OMP END SINGLE
   endsubroutine Write
 
   !------------------------------------------
@@ -282,7 +277,6 @@ contains
     !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO SIMD
     
     !MPI reduction
-    !$OMP SINGLE
     call MPI_REDUCE(um,um_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
     !Print
     if(rank.eq.0)then         
@@ -290,7 +284,6 @@ contains
        write(*,*)"-------------------"              
     endif
     call MPI_BARRIER(CART_COMM,ierr)
-    !$OMP END SINGLE
   end subroutine Monitor
 
 endmodule lbm
