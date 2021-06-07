@@ -1,0 +1,11 @@
+128	32	32
+0.0625	0.125	100
+1.8	1	1
+0.2	0.02
+
+------------------------------
+nx	ny
+L	Re
+ome	dt	rho	theta	ep
+rho0	theta
+max_step interval

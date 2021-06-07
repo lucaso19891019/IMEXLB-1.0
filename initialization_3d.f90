@@ -40,11 +40,11 @@ module initialization
   !flag: geometry flag array
   integer,dimension(:),allocatable::geo
   !boundary id:
-  integer,dimension(:),allocatable::bl,br,bu,bd,b_user
+  integer,dimension(:),allocatable::bl,br,bu,bd,bf,bb,b_user
   !fluid id:
   integer,dimension(:),allocatable::fluid_id
   !size of id arrays
-  integer size_fluid,l_size,r_size,u_size,d_size,user_size
+  integer size_fluid,l_size,r_size,u_size,d_size,f_size,b_size,user_size
 
   !momentum: momentum array
   double precision,dimension(:),allocatable::u
@@ -55,8 +55,8 @@ contains
   !DataInput: This subroutine reads data from "input.in", and generates derived initial data.
   subroutine DataInput
     
-    open(100,file='input.in',status='old')
-    read(100,*)nx,ny     
+    open(100,file='input_3d.in',status='old')
+    read(100,*)nx,ny,nz     
     read(100,*)charlength,pos,re
     !charlength & pos are given in the unit of nx, need to be converted to lattice unit.
     charlength=charlength*nx
@@ -107,14 +107,17 @@ contains
   !    / | \
   !   0  3  6
   subroutine InitLattice
-    integer i,j,iq   
-    !Lattice velocities and weights(2D)
+    integer i,j,k,iq   
+    !Lattice velocities and weights(3D)
     do j=-1,1
        do i=-1,1
-          iq=(i+1)*3+(j+1)
-          e(iq*dim)=i
-          e(iq*dim+1)=j
-          t(iq)=4*(1-0.75*i**2)*(1-0.75*j**2)/9.d0
+          do k=-1,1
+             iq=(k+1)*9+(i+1)*3+(j+1)
+             e(iq*dim)=i
+             e(iq*dim+1)=j
+             e(iq*dim+2)=k
+             t(iq)=8.d0/4.d0**(abs(i)+abs(j)+abs(k))/27.d0
+          enddo
        enddo
     enddo
   endsubroutine InitLattice
@@ -134,10 +137,12 @@ contains
 
     allocate(u(0:array_size*dim-1))
 
-    allocate(br(0:local_length(2)+2))
-    allocate(bl(0:local_length(2)+2))
-    allocate(bu(0:local_length(1)+2))
-    allocate(bd(0:local_length(1)+2))
+    allocate(br(0:(local_length(2)+2*ghost)*(local_length(3)+2*ghost)))
+    allocate(bl(0:(local_length(2)+2*ghost)*(local_length(3)+2*ghost)))
+    allocate(bu(0:(local_length(2)+2*ghost)*(local_length(1)+2*ghost)))
+    allocate(bd(0:(local_length(2)+2*ghost)*(local_length(1)+2*ghost)))
+    allocate(bf(0:(local_length(1)+2*ghost)*(local_length(3)+2*ghost)))
+    allocate(bb(0:(local_length(1)+2*ghost)*(local_length(3)+2*ghost)))
   endsubroutine AllocateArrays
   
   !-----------------------------------------------------
@@ -157,40 +162,47 @@ contains
     deallocate(bl)
     deallocate(bu)
     deallocate(bd)
+    deallocate(bf)
+    deallocate(bb)
   endsubroutine DeAllocateArrays  
 
   !---------------------------------------------
   !SetGeometry: This subroutine initializes the flag array according to the geometry
   subroutine SetGeometry 
-    integer i,j,id,idn,x,y,idl,idr,idu,idd,id_user,iq
+    integer i,j,k,id,idn,x,y,z,idl,idr,idu,idf,idb,idd,id_user,iq
     logical flag
     idn=0
     idl=0
     idr=0
     idu=0
     idd=0
+    idf=0
+    idb=0
 
+    do k=0,local_length(3)+2
     do j=0,local_length(2)+2
        do i=0,local_length(1)+2
           x=i-1
           y=j-1
-          id=(i-1+ghost)+(local_length(1)+2*ghost)*(j-1+ghost)
+          z=k-1
+          id=(i-1+ghost)+(local_length(1)+2*ghost)*(j-1+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k-1+ghost)
           
-          if(x>=0.and.x<local_length(1).and.y>=0.and.y<local_length(2))then
+          if(x>=0.and.x<local_length(1).and.y>=0.and.y<local_length(2).and.z>=0.and.z<local_length(3))then
              x=x+local_start(1)
              y=y+local_start(2)
+             z=z+local_start(3)
 
              geo(id)=0
              !Cylinder
-             if(dble((x-pos)**2+(y-ny/2.d0)**2).gt.radius**2)then
+             if(dble((x-pos)**2+(y-ny/2.d0)**2+(z-nz/2.d0)**2).gt.radius**2)then
                 geo(id)=1
                 fluid_id(idn)=id
                 idn=idn+1
-
              endif
           else
              x=x+local_start(1)
              y=y+local_start(2)
+             z=z+local_start(3)
              !Walls
              if(x.eq.-1)then
                 bl(idl)=id
@@ -201,14 +213,23 @@ contains
                 idr=idr+1
              endif
              if(y.eq.-1)then
+                bf(idf)=id
+                idf=idf+1
+             endif
+             if(y.eq.ny+1)then
+                bb(idb)=id
+                idb=idb+1
+             endif
+             if(z.eq.-1)then
                 bd(idd)=id
                 idd=idd+1
              endif
-             if(y.eq.ny+1)then
+             if(z.eq.nz+1)then
                 bu(idu)=id
                 idu=idu+1
              endif
           endif
+       enddo
        enddo
     enddo
 
@@ -219,6 +240,8 @@ contains
     r_size=idr
     u_size=idu
     d_size=idd
+    f_size=idf
+    b_size=idb
     
     !User defined boundary
     flag=.false.
@@ -226,7 +249,7 @@ contains
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do iq=0,nq-1
-          if(geo(id)==0.and.geo(id+e(iq*dim)+(local_length(1)+2*ghost)*(iq*dim+1))==1)then
+          if(geo(id)==0.and.geo(id+e(iq*dim)+(local_length(1)+2*ghost)*e(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))==1)then
              b_user(id_user)=id
              id_user=id_user+1
              flag=.true.
@@ -244,20 +267,23 @@ contains
 
   !--------------------------------------
   subroutine InitUP
-    integer i,j,id
-    double precision r,y
+    integer i,j,k,id
+    double precision r,z
     !Initilize momentum, pressure
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO collapse(2) private(id,r,y) schedule(static,1)
-    do j=0,local_length(2)-1
-       do i=0,local_length(1)-1
-          !Perturbation
-          call random_number(r)
-          r=1.d0+(r-0.5d0)*2.d0*0.5d0
-          y=j+local_start(2)
-          id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)
-          p(id)=0.d0
-          u(id*dim)=uu*4.d0*y*(ny-y)/ny**2*r*geo(id) 
-          u(id*dim+1)=0.d0                  
+    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO collapse(3) private(id,r,z) schedule(static,1)
+    do k=0,local_length(3)-1
+       do j=0,local_length(2)-1
+          do i=0,local_length(1)-1
+             !Perturbation
+             call random_number(r)
+             r=1.d0+(r-0.5d0)*2.d0*0.5d0
+             z=k+local_start(3)
+             id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost)
+             p(id)=geo(id)!0.d0
+             u(id*dim)=uu*4.d0*z*(nz-z)/nz**2*r*geo(id) 
+             u(id*dim+1)=0.d0
+             u(id*dim+2)=0.d0
+          enddo
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
