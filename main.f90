@@ -1,5 +1,5 @@
 !Geng Liu, April 2nd, 2021
-program main
+program main 
   !The main program is where LBM is implemented.
   use lbm
 
@@ -32,15 +32,16 @@ program main
   !Initialization of PDFs
   call InitPDF
 
-  !LBM loop
+  count=0!Output count
+  
+  !LBM loop 
   do iter=0,max_step
 
      !print out maximum velocity magnitude every "interv" steps
-     if (mod(iter,interv).eq.0)then
-        if(rank.eq.0)then         
-          write(*,*)"T=",iter/t_intv
-        endif
+     if (mod(iter,interv).eq.0)then        
         call Monitor
+        call WriteBinary
+        count=count+1
      endif
 
      call Collision    
@@ -51,7 +52,7 @@ program main
   enddo
  
   !Write results to file
-  call Write
+  !call WriteBinary
 
   !$OMP END TARGET DATA
 

@@ -252,12 +252,12 @@ contains
        do i=0,local_length(1)-1
           !Perturbation
           call random_number(r)
-          r=1.d0+(r-0.5d0)*2.d0*0.5d0
+          r=1.d0+(r-0.5d0)*2.d0*0.2d0
           y=j+local_start(2)
           id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)
           p(id)=0.d0
-          u(id*dim)=uu*4.d0*y*(ny-y)/ny**2*r*geo(id) 
-          u(id*dim+1)=0.d0                  
+          u(id*dim)=uu*4.d0*y*(ny-y)/ny**2*geo(id)*r 
+          u(id*dim+1)=0.d0
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO

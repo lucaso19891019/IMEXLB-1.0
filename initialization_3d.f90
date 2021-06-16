@@ -193,7 +193,7 @@ contains
              z=z+local_start(3)
 
              geo(id)=0
-             !Cylinder
+             !Sphere
              if(dble((x-pos)**2+(y-ny/2.d0)**2+(z-nz/2.d0)**2).gt.radius**2)then
                 geo(id)=1
                 fluid_id(idn)=id
@@ -249,7 +249,7 @@ contains
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do iq=0,nq-1
-          if(geo(id)==0.and.geo(id+e(iq*dim)+(local_length(1)+2*ghost)*e(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))==1)then
+          if(geo(id)==0.and.geo(id+e(iq*dim)+(local_length(1)+2*ghost)*(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(iq*dim+2))==1)then
              b_user(id_user)=id
              id_user=id_user+1
              flag=.true.
@@ -276,10 +276,10 @@ contains
           do i=0,local_length(1)-1
              !Perturbation
              call random_number(r)
-             r=1.d0+(r-0.5d0)*2.d0*0.5d0
+             r=1.d0+(r-0.5d0)*2.d0*0.2d0
              z=k+local_start(3)
              id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost)
-             p(id)=geo(id)!0.d0
+             p(id)=0.d0
              u(id*dim)=uu*4.d0*z*(nz-z)/nz**2*r*geo(id) 
              u(id*dim+1)=0.d0
              u(id*dim+2)=0.d0
