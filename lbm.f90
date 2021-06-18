@@ -219,7 +219,7 @@ contains
     call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_EXCL+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     if(ierr.ne.MPI_SUCCESS)then
        if(rank==0)then
-          call MPI_FILE_DELETE(filename,MPI_INFO_MULL,ierr)
+          call MPI_FILE_DELETE(filename,MPI_INFO_NULL,ierr)
        endif
        call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     endif
