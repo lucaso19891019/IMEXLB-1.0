@@ -4,6 +4,7 @@ program main
   use lbm
 
   implicit none
+  integer gpuid
   
   !Initialize MPI and get MPI rank and # of processors.
   call MPI_INIT (ierr)
@@ -23,7 +24,8 @@ program main
   call SetGeometry
   
   !OpenMP GPU parallelization: global offloading
-  !$OMP TARGET DATA map(to:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id) device(0)
+  gpuid=mod(rank,4)+1!# of GPU per node: 4
+  !$OMP TARGET ENTER DATA map(to:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id) device(gpuid)
   !Device number to be changed for cross node implementations.
   
   !Initialize u,p
@@ -40,11 +42,12 @@ program main
      !print out maximum velocity magnitude every "interv" steps
      if (mod(iter,interv).eq.0)then        
         call Monitor
-        call WriteBinary
+!        call WriteBinary
         count=count+1
      endif
 
-     call Collision    
+     call Collision
+     
      call BoundaryCondition
      call Propagation    
      call PostProcessing     
@@ -52,9 +55,9 @@ program main
   enddo
  
   !Write results to file
-  !call WriteBinary
+  call WriteBinary
 
-  !$OMP END TARGET DATA
+  !$OMP TARGET EXIT DATA map(delete:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id)
 
   !Deallocate arrays
   call DeAllocateArrays

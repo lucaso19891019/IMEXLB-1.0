@@ -27,7 +27,7 @@ contains
     double precision udu,edu
 
     !Initialize PDF
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,ind,iq,udu,edu) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
@@ -45,7 +45,7 @@ contains
           f(id*nq+iq)=t(iq)*(p(id)*3.d0+rho0*(3*edu+4.5*edu**2-1.5*udu))
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO       
+    !$OMP END TARGET TEAMS DISTRIBUTE   
   endsubroutine InitPDF
 
   !------------------------------------------------------------------------
@@ -54,7 +54,7 @@ contains
     integer idn,id,iq,ind
     double precision udu,edu,feq
 
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,ind,iq,udu,edu,feq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu,feq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
@@ -72,7 +72,7 @@ contains
           fb(id*nq+iq)=(1-ome)*f(id*nq+iq)+ome*feq
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO 
+    !$OMP END TARGET TEAMS DISTRIBUTE 
 
   endsubroutine Collision
 
@@ -82,14 +82,14 @@ contains
     integer idn,id,iq
 
     !Perfect Shift
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)      
        do iq=0,nq-1
           f(id*nq+iq)=fb((id-e(iq*dim)-(local_length(1)+2*ghost)*e(iq*dim+1))*nq+iq)
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
   endsubroutine Propagation
 
   !---------------------------------------------
@@ -104,54 +104,54 @@ contains
     
 
     !Up Wall
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,u_size-1
        id=bu(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1))*nq+nq-1-iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
     !Down Wall
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,d_size-1
        id=bd(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1))*nq+nq-1-iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
     !User Boundary
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,user_size-1
        id=b_user(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1))*nq+nq-1-iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 !--------------------------------------------------------------------------
     !Inlet condition: gradient free condition in boundary normal direction
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,l_size-1
        id=bl(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+1)*nq+iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
     !Outlet condition: gradient free condition along characteristics
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,r_size-1
        id=br(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+e(iq*dim)+(local_length(1)+2*ghost)*e(iq*dim+1))*nq+iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
   endsubroutine BoundaryCondition
 
@@ -161,7 +161,7 @@ contains
 
     integer idn,id,iq,y
 
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,ind,iq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        p(id)=0
@@ -179,25 +179,25 @@ contains
        enddo
        p(id)=p(id)/3.d0*geo(id)
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 !----------------------------------------------------------------------------------
     !Boundary Condition
     !Dirichlet boundary condition for inlet
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,y) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,y)
     do idn=0,l_size-1
        id=bl(idn)+1
        y=id/(local_length(1)+2*ghost)-ghost+local_start(2)
        u(id*dim)=uu*rho0*4.d0*y*(ny-y)/ny**2
        u(id*dim+1)=0.d0
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
     !0 pressure condition for outlet
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE  private(idn,id)
     do idn=0,r_size-1
        id=br(idn)-1
        p(id)=0
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
   endsubroutine PostProcessing
 
@@ -211,7 +211,9 @@ contains
     character buffer*120
     integer print_size,num_var,num_digit
     integer(kind=MPI_OFFSET_KIND)offset
-    integer(kind=MPI_ADDRESS_KIND)extent
+    integer(kind=MPI_ADDRESS_KIND)extent,zero
+
+    zero=0
 
     !$OMP TARGET UPDATE from(u,p)
     
@@ -219,7 +221,7 @@ contains
     call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_EXCL+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     if(ierr.ne.MPI_SUCCESS)then
        if(rank==0)then
-          call MPI_FILE_DELETE(filename,MPI_INFO_NULL,ierr)
+          call MPI_FILE_DELETE(filename,MPI_INFO_MULL,ierr)
        endif
        call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     endif
@@ -238,7 +240,7 @@ contains
     num_digit=14
     call MPI_TYPE_CONTIGUOUS(local_length(1)*(num_var+dim)*num_digit,MPI_CHARACTER,contig_type,ierr)
     extent=(nx+1)*(num_var+dim)*num_digit
-    call MPI_TYPE_CREATE_RESIZED(contig_type,0,extent,write_2d_type,ierr)
+    call MPI_TYPE_CREATE_RESIZED(contig_type,zero,extent,write_2d_type,ierr)
     call MPI_TYPE_COMMIT(write_2d_type,ierr)
     offset=offset+(local_start(1)+local_start(2)*(nx+1))*(num_digit*(num_var+dim))
     call MPI_FILE_SET_VIEW(file,offset,MPI_CHARACTER,write_2d_type,"native",MPI_INFO_NULL,ierr)
@@ -272,12 +274,12 @@ contains
     !Find the MPI local maximum magnitude of velocity
     um=0
     !OpenMP reduction
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:um) private(id) reduction(max:um) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE map(tofrom:um) reduction(max:um)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
        um=max(um,sqrt(u(id*dim)**2+u(id*dim+1)**2))
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
     call MPI_BARRIER(CART_COMM,ierr)
     !MPI reduction
     call MPI_REDUCE(um,um_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
@@ -311,7 +313,7 @@ contains
     call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_EXCL+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     if(ierr.ne.MPI_SUCCESS)then
        if(rank==0)then
-          call MPI_FILE_DELETE(filename,MPI_INFO_MULL,ierr)
+          call MPI_FILE_DELETE(filename,MPI_INFO_NULL,ierr)
        endif
        call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     endif
@@ -425,14 +427,14 @@ contains
           buffer(i+j*local_length(1)+1)=(local_start(1)+i)/charlength
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
     do j=0,local_length(2)-1
        do i=0,local_length(1)-1      
           buffer(i+j*local_length(1)+1)=(local_start(2)+j)/charlength
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
     
     do j=0,local_length(2)-1
        do i=0,local_length(1)-1      
@@ -440,7 +442,7 @@ contains
                *charlength/t_intv**2!Unit conversion
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
     do ind=0,dim-1
        do j=0,local_length(2)-1
@@ -449,7 +451,7 @@ contains
                   /(charlength*t_intv)!Unit conversion
           enddo
        enddo
-       call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+      call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
     enddo
 
     !Deallocate writing buffer

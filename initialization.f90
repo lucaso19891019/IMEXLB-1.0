@@ -246,21 +246,27 @@ contains
   subroutine InitUP
     integer i,j,id
     double precision r,y
+    double precision r_vec(0:99)
+    !Generate random number vector on CPU
+    call random_number(r_vec)
+    
+    
     !Initilize momentum, pressure
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO collapse(2) private(id,r,y) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE collapse(2) map(to:r_vec) private(j,i,r,y,id)
     do j=0,local_length(2)-1
        do i=0,local_length(1)-1
-          !Perturbation
-          call random_number(r)
-          r=1.d0+(r-0.5d0)*2.d0*0.2d0
-          y=j+local_start(2)
+
           id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)
+          !Perturbation
+          r=1.d0+(r_vec(mod(id,100))-0.5d0)*2.d0*0.2d0
+          y=j+local_start(2)
+          
           p(id)=0.d0
           u(id*dim)=uu*4.d0*y*(ny-y)/ny**2*geo(id)*r 
           u(id*dim+1)=0.d0
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
-  endsubroutine InitUP 
+    !$OMP END TARGET TEAMS DISTRIBUTE
+  endsubroutine InitUP
 
 endmodule initialization
