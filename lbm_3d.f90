@@ -2,17 +2,16 @@
 module lbm
   !This module includes the subroutines for LBM algorithms.
   use initialization
-  use omp_lib
 
-  !MPI local maximum velocity
+  !Maximum velocity on current MPI processor
   double precision um
 
   !Writing offset
   integer(kind=MPI_OFFSET_KIND)offset
 contains
   !Definition to some temporary variables in subroutines:
-  !idn: index for id vectors
-  !id: index for arrays
+  !idn: index for index vectors
+  !id: index for array elements
   !iq: index for lattice directions
   !io: lattice direction opposite to iq
   !ind: index for dimensions
@@ -21,13 +20,13 @@ contains
   !feq: equalibrium distributions
 
   !---------------------------------------------
-  !InitPDF: This subroutine initializes the momentum, pressure and PDFs.
+  !InitPDF: This subroutine initializes the PDFs. This subroutine can be offloaded to devices.
   subroutine InitPDF
     integer idn,id,iq,ind
     double precision udu,edu
 
     !Initialize PDF
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,ind,iq,udu,edu) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu) 
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
@@ -45,16 +44,16 @@ contains
           f(id*nq+iq)=t(iq)*(p(id)*3.d0+rho0*(3*edu+4.5*edu**2-1.5*udu))
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO         
+    !$OMP END TARGET TEAMS DISTRIBUTE    
   endsubroutine InitPDF
 
   !------------------------------------------------------------------------
-  !Collision: This subroutine is the collision process of LBM. The collision result of array f is written in array fb.
+  !Collision: This subroutine is the collision process of LBM. The collision result of array f is stored in array fb. This subroutine can be offloaded to devices.
   subroutine Collision
     integer idn,id,iq,ind
     double precision udu,edu,feq
 
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,ind,iq,udu,edu,feq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu,feq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
@@ -72,28 +71,28 @@ contains
           fb(id*nq+iq)=(1-ome)*f(id*nq+iq)+ome*feq
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
   endsubroutine Collision
 
   !---------------------------------------------
-  !Propagation: This subroutine includes the propagation process of LBM, as well as the bounce back process. The propagation result of array fb is written in array f.
+  !Propagation: This subroutine is the propagation process of LBM. The propagation result of array fb is stored in array f. This subroutine can be offloaded to devices.
   subroutine Propagation
     integer idn,id,iq
 
     !Perfect Shift
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)      
        do iq=0,nq-1
           f(id*nq+iq)=fb((id-e(iq*dim)-(local_length(1)+2*ghost)*e(iq*dim+1)-(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+iq)
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
   endsubroutine Propagation
 
   !---------------------------------------------
-  !BoundaryCondition: This subroutine applies the boundary conditions other than no-slip conditions
+  !BoundaryCondition: This subroutine applies the boundary conditions. The boundary conditions should be pre-propagation conditions, post-propagation conditions should either be transformed to pre-propagation conditions, or be applied in the PostProcessing subroutine. Periodic condition is the default condition and doesn't require specification here. This subroutine can be offloaded to devices.
   subroutine BoundaryCondition
     integer idn,id,iq
 
@@ -104,64 +103,66 @@ contains
     
 
     !Up Wall
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,u_size-1
        id=bu(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
     !Down Wall
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,d_size-1
        id=bd(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
+    !Front and Back walls are periodic.
+    
     !User Boundary
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,user_size-1
        id=b_user(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 !--------------------------------------------------------------------------
     !Inlet condition: gradient free condition in boundary normal direction
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,l_size-1
        id=bl(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+1)*nq+iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
     !Outlet condition: gradient free condition along characteristics
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,iq) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,r_size-1
        id=br(idn)
        do iq=0,nq-1
           fb(id*nq+iq) = fb((id+e(iq*dim)+(local_length(1)+2*ghost)*e(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+iq)        
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
   endsubroutine BoundaryCondition
 
   !---------------------------------------------
-  !PostProcessing: This subroutine evalutes the physical properties, including pressure and momentum.
+  !PostProcessing: This subroutine evalutes the physical properties, including pressure and velocity. It can also include some post-propagation boundary conditions. This subroutine can be offloaded to devices. 
   subroutine PostProcessing
 
     integer idn,id,iq,z
 
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,ind,iq) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        p(id)=0
@@ -179,101 +180,30 @@ contains
        enddo
        p(id)=p(id)/3.d0*geo(id)
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO 
+    !$OMP END TARGET TEAMS DISTRIBUTE
 !----------------------------------------------------------------------------------
     !Boundary Condition
     !Dirichlet boundary condition for inlet
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO private(id,y) nowait schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,y)
     do idn=0,l_size-1
        id=bl(idn)+1
        z=id/((local_length(1)+2*ghost)*(local_length(2)+2*ghost))-ghost+local_start(3)
        u(id*dim)=uu*rho0*4.d0*z*(nz-z)/nz**2
        u(id*dim+1)=0.d0
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
     !0 pressure condition for outlet
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO  private(id) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE  private(idn,id)
     do idn=0,r_size-1
        id=br(idn)-1
        p(id)=0
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
 
   endsubroutine PostProcessing
 
-  !---------------------------------------------
-  !Output: This subourtine writes the result to output files.
-  subroutine Write
-    character filename*20,format*100
-    integer i,j,k,id
-    double precision x,y,z
-    integer file,request,contig_type,contig_type_2d,write_2d_type,write_3d_type
-    character buffer*150
-    integer print_size,num_var,num_digit
-    integer(kind=MPI_OFFSET_KIND)offset
-    integer(kind=MPI_ADDRESS_KIND)extent
-
-    !$OMP TARGET UPDATE from(u,p)
-    
-    write(filename,'(A)')"output.dat"
-    call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_EXCL+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
-    if(ierr.ne.MPI_SUCCESS)then
-       if(rank==0)then
-          call MPI_FILE_DELETE(filename,MPI_INFO_NULL,ierr)
-       endif
-       call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
-    endif
-
-    write(buffer,'(A,I3,A,I3,A,I3,A)')"TITLE = ""Cylinder"""//NEW_LINE('A')//"VARIABLES = ""X"", ""Y"", ""Z"", ""p"", ""ux"", ""uy"", ""uz"""//NEW_LINE('A')//"ZONE I = ",nx+1,", J = ",ny+1,", K = ",nz+1,NEW_LINE('A')
-    print_size=LEN_TRIM(buffer)
-    offset=0
-    if(rank==0)then
-       call MPI_FILE_SEEK(file,offset,MPI_SEEK_SET,ierr)
-       call MPI_FILE_IWRITE(file,buffer,print_size,MPI_CHARACTER,request,ierr)
-    endif
-    call MPI_BARRIER(CART_COMM,ierr)
-    offset=offset+print_size
-
-    num_var=4
-    num_digit=14
-    call MPI_TYPE_CONTIGUOUS(local_length(1)*(num_var+dim)*num_digit,MPI_CHARACTER,contig_type,ierr)
-    extent=(nx+1)*(num_var+dim)*num_digit
-    call MPI_TYPE_CREATE_RESIZED(contig_type,0,extent,write_2d_type,ierr)
-    call MPI_TYPE_COMMIT(write_2d_type,ierr)
-    call MPI_TYPE_CONTIGUOUS(local_length(2),write_2d_type,contig_type_2d,ierr)
-    extent=(nx+1)*(ny+1)*(num_var+dim)*num_digit
-    call MPI_TYPE_CREATE_RESIZED(contig_type_2d,0,extent,write_3d_type,ierr)
-    call MPI_TYPE_COMMIT(write_3d_type,ierr)
-
-
-    
-    offset=offset+(local_start(1)+local_start(2)*(nx+1)+local_start(3)*(ny+1)*(nx+1))*(num_digit*(num_var+dim))
-    call MPI_FILE_SET_VIEW(file,offset,MPI_CHARACTER,write_3d_type,"native",MPI_INFO_NULL,ierr)
-    write(format,'(A)')"(sp,es13.6e2,X,es13.6e2,X,es13.6e2,4(X,es13.6e2),A)"
-    do k=0,local_length(3)-1
-     do j=0,local_length(2)-1
-       do i=0,local_length(1)-1
-          
-          x=local_start(1)+i
-          y=local_start(2)+j
-          z=local_start(3)+k
-          id=(i+ghost)+(local_length(1)+2*ghost)*(j+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost)
-          
-          write(buffer,format)x,y,z,p(id),u(id*dim),u(id*dim+1),u(id*dim+2),NEW_LINE('A')
-          print_size=LEN_TRIM(buffer)
-          call MPI_FILE_IWRITE(file,TRIM(buffer),print_size,MPI_CHARACTER,request,ierr)
-
-       enddo
-    enddo
-    enddo
-    
-    call MPI_BARRIER(CART_COMM,ierr)
-    call MPI_FILE_CLOSE(file,ierr)
-
-  endsubroutine Write
-
   !------------------------------------------
-  !Monitor: This subroutine prints the maximum magnitude of velocity
+  !Monitor: This subroutine prints the user defined runtime global values, in this case maximum magnitude of velocity. This subroutine can be partly offloaded to devices.
   subroutine Monitor
     integer idn,id
     double precision um_global
@@ -281,12 +211,12 @@ contains
     !Find the MPI local maximum magnitude of velocity
     um=0
     !OpenMP reduction
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:um) private(id) reduction(max:um) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE map(tofrom:um) private(idn,id) reduction(max:um)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
        um=max(um,sqrt(u(id*dim)**2+u(id*dim+1)**2))
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
     call MPI_BARRIER(CART_COMM,ierr)
     !MPI reduction
     call MPI_REDUCE(um,um_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
@@ -296,11 +226,10 @@ contains
        write(*,*)"Umax=",um_global/(charlength*t_intv)
        write(*,*)"-------------------"              
     endif
-    call MPI_BARRIER(CART_COMM,ierr)
   end subroutine Monitor
 
   !---------------------------------------------
-  !Output: This subourtine writes the result to binary output files.
+  !Output: This subourtine writes the result to a single binary file in PLT format.
   subroutine WriteBinary
     character filename*20,num*3
     integer i,j,k,ind
@@ -429,8 +358,6 @@ contains
     !SetWritingView    
     call MPI_TYPE_CREATE_SUBARRAY(dim,global_length,local_length,local_start,MPI_ORDER_FORTRAN,MPI_DOUBLE_PRECISION,write_3d_type,ierr)
     call MPI_TYPE_CONTIGUOUS(numvars*1,write_3d_type,write_type,ierr)
-    !numvars*1 works with compiling option -fc=ifx, numvars does not work
-    !Both numvars*1 and numvars does not work with -fc=ifort
     call MPI_TYPE_COMMIT(write_type,ierr)
     call MPI_FILE_SET_VIEW(file,offset,MPI_DOUBLE_PRECISION,write_type,"native",MPI_INFO_NULL,ierr)
     
@@ -450,7 +377,7 @@ contains
           enddo
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
     do k=0,local_length(3)-1
        do j=0,local_length(2)-1
@@ -460,7 +387,7 @@ contains
           enddo
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
     do k=0,local_length(3)-1
        do j=0,local_length(2)-1
@@ -470,7 +397,7 @@ contains
           enddo
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
     do k=0,local_length(3)-1
        do j=0,local_length(2)-1
@@ -482,7 +409,7 @@ contains
           enddo
        enddo
     enddo
-    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
     do ind=0,dim-1
        do k=0,local_length(3)-1
@@ -495,7 +422,7 @@ contains
              enddo
           enddo
        enddo
-       call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,request,ierr)
+       call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
     enddo
 
     !Deallocate writing buffer
@@ -505,6 +432,10 @@ contains
     call MPI_FILE_CLOSE(file,ierr)
 
   contains
+    !A function that transforms a string to ASCII code
+    !s: String
+    !n: Size of string
+    !o: Generated ASCII code
     function str2ascii(s,n)result(o)
       character,dimension(30)::s
       integer n

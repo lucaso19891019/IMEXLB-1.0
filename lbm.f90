@@ -1,18 +1,17 @@
 !Geng Liu, April 2nd, 2021
 module lbm
   !This module includes the subroutines for LBM algorithms.
-  use initialization
-  use omp_lib
+  use initialization 
 
-  !MPI local maximum velocity
+  !Maximum velocity on current MPI processor
   double precision um
 
   !Writing offset
   integer(kind=MPI_OFFSET_KIND)offset
 contains
   !Definition to some temporary variables in subroutines:
-  !idn: index for id vectors
-  !id: index for arrays
+  !idn: index for index vectors
+  !id: index for array elements
   !iq: index for lattice directions
   !io: lattice direction opposite to iq
   !ind: index for dimensions
@@ -21,7 +20,7 @@ contains
   !feq: equalibrium distributions
 
   !---------------------------------------------
-  !InitPDF: This subroutine initializes the momentum, pressure and PDFs.
+  !InitPDF: This subroutine initializes the PDFs. This subroutine can be offloaded to devices.
   subroutine InitPDF
     integer idn,id,iq,ind
     double precision udu,edu
@@ -49,7 +48,7 @@ contains
   endsubroutine InitPDF
 
   !------------------------------------------------------------------------
-  !Collision: This subroutine is the collision process of LBM. The collision result of array f is written in array fb.
+  !Collision: This subroutine is the collision process of LBM. The collision result of array f is stored in array fb. This subroutine can be offloaded to devices.
   subroutine Collision
     integer idn,id,iq,ind
     double precision udu,edu,feq
@@ -77,7 +76,7 @@ contains
   endsubroutine Collision
 
   !---------------------------------------------
-  !Propagation: This subroutine includes the propagation process of LBM, as well as the bounce back process. The propagation result of array fb is written in array f.
+  !Propagation: This subroutine is the propagation process of LBM. The propagation result of array fb is stored in array f. This subroutine can be offloaded to devices.
   subroutine Propagation
     integer idn,id,iq
 
@@ -93,7 +92,7 @@ contains
   endsubroutine Propagation
 
   !---------------------------------------------
-  !BoundaryCondition: This subroutine applies the boundary conditions other than no-slip conditions
+  !BoundaryCondition: This subroutine applies the boundary conditions. The boundary conditions should be pre-propagation conditions, post-propagation conditions should either be transformed to pre-propagation conditions, or be applied in the PostProcessing subroutine. Periodic condition is the default condition and doesn't require specification here. This subroutine can be offloaded to devices. 
   subroutine BoundaryCondition
     integer idn,id,iq
 
@@ -156,7 +155,7 @@ contains
   endsubroutine BoundaryCondition
 
   !---------------------------------------------
-  !PostProcessing: This subroutine evalutes the physical properties, including pressure and momentum.
+  !PostProcessing: This subroutine evalutes the physical properties, including pressure and velocity. It can also include some post-propagation boundary conditions. This subroutine can be offloaded to devices. 
   subroutine PostProcessing
 
     integer idn,id,iq,y
@@ -201,72 +200,8 @@ contains
 
   endsubroutine PostProcessing
 
-  !---------------------------------------------
-  !Output: This subourtine writes the result to output files.
-  subroutine Write
-    character filename*20,format*100
-    integer i,j,id
-    double precision x,y
-    integer file,request,contig_type,write_2d_type
-    character buffer*120
-    integer print_size,num_var,num_digit
-    integer(kind=MPI_OFFSET_KIND)offset
-    integer(kind=MPI_ADDRESS_KIND)extent,zero
-
-    zero=0
-
-    !$OMP TARGET UPDATE from(u,p)
-    
-    write(filename,'(A)')"output.dat"
-    call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_EXCL+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
-    if(ierr.ne.MPI_SUCCESS)then
-       if(rank==0)then
-          call MPI_FILE_DELETE(filename,MPI_INFO_MULL,ierr)
-       endif
-       call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
-    endif
-
-    write(buffer,'(A,I3,A,I3,A)')"TITLE = ""Cylinder"""//NEW_LINE('A')//"VARIABLES = ""X"", ""Y"", ""p"", ""ux"", ""uy"""//NEW_LINE('A')//"ZONE I = ",nx+1,", J = ",ny+1,NEW_LINE('A')
-    print_size=LEN_TRIM(buffer)
-    offset=0
-    if(rank==0)then
-       call MPI_FILE_SEEK(file,offset,MPI_SEEK_SET,ierr)
-       call MPI_FILE_IWRITE(file,buffer,print_size,MPI_CHARACTER,request,ierr)
-    endif
-    call MPI_BARRIER(CART_COMM,ierr)
-    offset=offset+print_size
-
-    num_var=3
-    num_digit=14
-    call MPI_TYPE_CONTIGUOUS(local_length(1)*(num_var+dim)*num_digit,MPI_CHARACTER,contig_type,ierr)
-    extent=(nx+1)*(num_var+dim)*num_digit
-    call MPI_TYPE_CREATE_RESIZED(contig_type,zero,extent,write_2d_type,ierr)
-    call MPI_TYPE_COMMIT(write_2d_type,ierr)
-    offset=offset+(local_start(1)+local_start(2)*(nx+1))*(num_digit*(num_var+dim))
-    call MPI_FILE_SET_VIEW(file,offset,MPI_CHARACTER,write_2d_type,"native",MPI_INFO_NULL,ierr)
-    
-    write(format,'(A)')"(sp,es13.6e2,X,es13.6e2,3(X,es13.6e2),A)"
-    
-    do j=0,local_length(2)-1 
-       do i=0,local_length(1)-1          
-          x=local_start(1)+i
-          y=local_start(2)+j
-          id=(i+ghost)+(local_length(1)+2*ghost)*(j+ghost)
-          
-          write(buffer,format)x,y,p(id),u(id*dim),u(id*dim+1),NEW_LINE('A')
-          print_size=LEN_TRIM(buffer)
-          call MPI_FILE_IWRITE(file,TRIM(buffer),print_size,MPI_CHARACTER,request,ierr)
-
-       enddo
-    enddo
-    
-    call MPI_BARRIER(CART_COMM,ierr)
-    call MPI_FILE_CLOSE(file,ierr)
-
-  endsubroutine Write
-
   !------------------------------------------
-  !Monitor: This subroutine prints the maximum magnitude of velocity
+  !Monitor: This subroutine prints the user defined runtime global values, in this case maximum magnitude of velocity. This subroutine can be partly offloaded to devices. 
   subroutine Monitor
     integer idn,id
     double precision um_global
@@ -274,7 +209,7 @@ contains
     !Find the MPI local maximum magnitude of velocity
     um=0
     !OpenMP reduction
-    !$OMP TARGET TEAMS DISTRIBUTE map(tofrom:um) reduction(max:um)
+    !$OMP TARGET TEAMS DISTRIBUTE map(tofrom:um) private(idn,id) reduction(max:um)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
        um=max(um,sqrt(u(id*dim)**2+u(id*dim+1)**2))
@@ -292,7 +227,7 @@ contains
   end subroutine Monitor
 
   !---------------------------------------------
-  !WriteBinary: This subourtine writes the result to binary output files.
+  !Output: This subourtine writes the result to a single binary file in PLT format.
   subroutine WriteBinary
     character filename*20,num*3
     integer i,j,ind
@@ -461,6 +396,10 @@ contains
     call MPI_FILE_CLOSE(file,ierr)
 
   contains
+    !A function that transforms a string to ASCII code
+    !s: String
+    !n: Size of string
+    !o: Generated ASCII code
     function str2ascii(s,n)result(o)
       character,dimension(30)::s
       integer n

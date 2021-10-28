@@ -1,12 +1,12 @@
 !Geng Liu, April 2nd, 2021.
 module cart_mpi
-  !This module generates a cartesian MPI communicator, and defines the arrays distributed to each MPI processor. The module also defines the data types for sending and receiving subarrays.
+  !This module generates a 2D cartesian MPI communicator, and defines the arrays distributed to each MPI processor. The module also defines the data types for sending and receiving subarrays.
   use mpi
   implicit none
   !dim: dimension of the problem
   !nq: number of lattice velocities
   !ghost: thickness of ghost nodes
-  !num_neighbots: number of neighbors
+  !num_neighbots: number of neighbors for one processors
   integer,parameter:: dim=2,nq=9,ghost=3,num_neighbors=8
   
   !nx: number of points in x direction
@@ -21,25 +21,26 @@ module cart_mpi
   !CART_COMM: newly generated MPI cartesian communicator
   integer CART_COMM
 
-  !cart_coords: cartesian coordinates of this MPI processor
+  !cart_coords: cartesian coordinates of current MPI processor
   !cart_num_procs: number of MPI processors in different cartesian directions
   integer,dimension(dim)::cart_coords,cart_num_procs
   !cart_periods: flags for periodic communication in each direction
   logical,dimension(dim)::cart_periods
-  !global_length: directional length of whole array
-  !local_length: directional length of array distributed to this MPI processor
-  !local_start: local starting point's position in the whole array
-  !local_end: local ending point's position in the whole array
+  !global_length: directional length of whole domain
+  !local_length: directional length of array distributed to current MPI processor
+  !local_start: local starting point's position in the whole domain
+  !local_end: local ending point's position in the whole domain
   integer,dimension(dim)::global_length,local_length,local_start,local_end
-  !size of array
+  !size of scalor field array in current processor (reshaped to 1D)
   integer array_size
 
   !neighbor_procs: ID of each neighbor MPI processor
   integer,dimension(0:num_neighbors)::neighbor_procs
-  !subarray datatypes for receiving data from each neighbor processor
-  integer,dimension(0:num_neighbors)::INT_RECV_TYPE,F_RECV_TYPE,DPR_RECV_TYPE,LOG_RECV_TYPE
-  !subarray datatypes for sending data to each neighbor processor
-  integer,dimension(0:num_neighbors)::INT_SEND_TYPE,F_SEND_TYPE,DPR_SEND_TYPE,LOG_SEND_TYPE
+  !Subarray datatypes for receiving data from each neighbor processor
+  !Note: INT-integer, F-PDF (or variable of same dimension), U-Velocity (or variable of same dimension), DPR-double precision, LOG-logical
+  integer,dimension(0:num_neighbors)::INT_RECV_TYPE,F_RECV_TYPE,U_RECV_TYPE,DPR_RECV_TYPE,LOG_RECV_TYPE
+  !Subarray datatypes for sending data to each neighbor processor
+  integer,dimension(0:num_neighbors)::INT_SEND_TYPE,F_SEND_TYPE,U_SEND_TYPE,DPR_SEND_TYPE,LOG_SEND_TYPE
 
 contains
   !MPISetup: By calling other subroutines, this subroutine generates a cartesian MPI communicator, and defines the arrays distributed to each MPI processor as well as the data types for sending and receiving subarrays.
@@ -85,16 +86,16 @@ contains
     reorder_flag=.true.
     !Generate cartesian communicator
     call MPI_CART_CREATE(MPI_COMM_WORLD,dim,cart_num_procs,cart_periods,reorder_flag,CART_COMM,ierr)
-    !Get reordered ID of this MPI processor
+    !Get reordered ID of current MPI processor
     call MPI_COMM_RANK(CART_COMM,rank,ierr)
-    !Get this processor's coordinates
+    !Get current processor's coordinates
     call MPI_CART_COORDS(CART_COMM,rank,dim,cart_coords,ierr)
 
     call MPI_BARRIER(CART_COMM,ierr)    
   endsubroutine SetCartesian
   
   !-------------------------------------------------------------
-  !SetLocalLength: Based on the communicator generated in SetCartesian subroutine, this subroutine generates the local array information, including the local array length in each direction, and the starting and ending points' positions in the whole array.
+  !SetLocalLength: Based on the communicator generated in SetCartesian subroutine, this subroutine generates the local array information, including the local array length in each direction, and the starting and ending points' positions in the whole domain.
   subroutine SetLocalLength
     integer i,type1,ind
     integer,dimension(dim,num_procs)::length_public
@@ -109,11 +110,10 @@ contains
        endif
     enddo
 
-    !Collect the local length information of each MPI processor to a temporary database.
+    !Collect the local length information of each MPI processor in a temporary database.
     allocate(local_length_db(dim,0:cart_num_procs(1)-1,0:cart_num_procs(2)-1))    
     call MPI_TYPE_VECTOR(dim,1,1,MPI_INTEGER,type1,ierr)
     call MPI_TYPE_COMMIT(type1,ierr)
-!    call MPI_ALLGATHER(local_length(:),dim,MPI_INTEGER,length_public,1,type1,CART_COMM,ierr)
     call MPI_ALLGATHER(local_length(:),1,type1,length_public,1,type1,CART_COMM,ierr)
     call MPI_TYPE_FREE(type1,ierr)
     do i=1,num_procs
@@ -140,15 +140,16 @@ contains
   !--------------------------------------------
   !SetNeighbors: This subroutine defines the neighbors of this MPI processor, and generates sending and receiving subarray datatypes for communication with these neighbors.
   subroutine SetNeighbors
-    !neighbor_local_rank: rank of neighbor reordered in the world of neighbors of this MPI processor
-    !neighbor_pos_p(scalar)/ neighbor_pos(vector): directional relavant neighbor position.
+    !neighbor_local_rank: rank of neighbor reordered in the world of neighbors of current MPI processor (local relative rank)
+    !neighbor_pos_p(scalar): local relative coordinate in a certain direction.
+    !neighbor_pos(vector): local relative coordinate vector.
     integer i,j,ind, neighbor_local_rank,neighbor_pos_p
     integer,dimension(dim)::neighbor_pos
 
-    !neighbor_cart_coords: absolute coordinates of neighbor
+    !neighbor_cart_coords: global coordinates of neighbor
     integer,dimension(dim)::neighbor_cart_coords
-    !subarray information for sending and receiving data
-    integer,dimension(dim+1)::fsizes,fsubsize,frecv_start,fsend_start
+    !Subarray information for communication: f-PDF, u-Velocity, no prefix-scalor
+    integer,dimension(dim+1)::fsizes,fsubsize,frecv_start,fsend_start,usizes,usubsize,urecv_start,usend_start
     integer,dimension(dim)::sizes,subsize,recv_start,send_start
     
     do i=-1,1
@@ -167,6 +168,11 @@ contains
           fsubsize(1)=nq
           frecv_start(1)=0
           fsend_start(1)=0
+
+          usizes(1)=dim
+          usubsize(1)=dim
+          urecv_start(1)=0
+          usend_start(1)=0
           
           do ind=1,dim
              neighbor_pos_p=neighbor_pos(ind)
@@ -180,6 +186,11 @@ contains
              fsubsize(ind+1)=subsize(ind)
              frecv_start(ind+1)=recv_start(ind)
              fsend_start(ind+1)=send_start(ind)
+
+             usizes(ind+1)=sizes(ind)
+             usubsize(ind+1)=subsize(ind)
+             urecv_start(ind+1)=recv_start(ind)
+             usend_start(ind+1)=send_start(ind)
           enddo
 
           !Generating subarray datatypes
@@ -196,6 +207,13 @@ contains
           call MPI_TYPE_CREATE_SUBARRAY(dim+1,fsizes,fsubsize,fsend_start,MPI_ORDER_FORTRAN,&
                &MPI_DOUBLE_PRECISION,F_SEND_TYPE(neighbor_local_rank),ierr)
           call MPI_TYPE_COMMIT(F_SEND_TYPE(neighbor_local_rank),ierr)
+
+          call MPI_TYPE_CREATE_SUBARRAY(dim+1,usizes,usubsize,urecv_start,MPI_ORDER_FORTRAN,&
+               &MPI_DOUBLE_PRECISION,U_RECV_TYPE(neighbor_local_rank),ierr)
+          call MPI_TYPE_COMMIT(U_RECV_TYPE(neighbor_local_rank),ierr)
+          call MPI_TYPE_CREATE_SUBARRAY(dim+1,usizes,usubsize,usend_start,MPI_ORDER_FORTRAN,&
+               &MPI_DOUBLE_PRECISION,U_SEND_TYPE(neighbor_local_rank),ierr)
+          call MPI_TYPE_COMMIT(U_SEND_TYPE(neighbor_local_rank),ierr)
 
           call MPI_TYPE_CREATE_SUBARRAY(dim,sizes,subsize,recv_start,MPI_ORDER_FORTRAN,&
                &MPI_DOUBLE_PRECISION,DPR_RECV_TYPE(neighbor_local_rank),ierr)
@@ -218,12 +236,12 @@ contains
   endsubroutine SetNeighbors
   
   !-------------------------------------------------
-  !PassF: This subroutine is called when communication of the Array(PDF) is needed. The communication is based on the sending and receiving subarray datatypes generated in SetNeighbors
+  !PassF: This subroutine is called when communication of the Array(PDF or variable of the same dimension) is needed. The communication is based on the sending and receiving subarray datatypes generated in SetNeighbors
 subroutine PassF(Array)
 
   double precision,dimension(0:nq*array_size-1)::array
-  !neighbor_local_rank:local(relavant) rank of neighbor
-  !neighbor_oppos_rank: local(relavant) rank of neighbor opposite to neighbor_local_rank
+  !neighbor_local_rank:local(relative) rank of neighbor
+  !neighbor_oppos_rank: local(relative) rank of neighbor opposite to neighbor_local_rank
   integer neighbor_local_rank,neighbor_oppos_rank
   
    !Requests and communication status.
@@ -259,10 +277,11 @@ subroutine PassF(Array)
  endsubroutine PassF
 
  !-------------------------------------------
+ !PassInt: This subroutine is communication for integer arrays, communication for arrays of other types can be similar to PassF and PassInt (array type and sending and receiving types should be replaced).
  subroutine PassInt(Array)
   integer,dimension(0:array_size-1)::array
-  !neighbor_local_rank:local(relavant) rank of neighbor
-  !neighbor_oppos_rank: local(relavant) rank of neighbor opposite to neighbor_local_rank
+  !neighbor_local_rank:local(relative) rank of neighbor
+  !neighbor_oppos_rank: local(relative) rank of neighbor opposite to neighbor_local_rank
   integer neighbor_local_rank,neighbor_oppos_rank
   
    !Requests and communication status.

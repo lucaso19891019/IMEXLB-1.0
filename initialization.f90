@@ -2,14 +2,15 @@
 module initialization
   !This module includes the variables and subroutines for fluid initialization.
   use cart_mpi
+  use omp_lib
   implicit none
 
   !charlength: characteristic length
-  !pos: position of cylinder in x-direction
+  !pos: cylinder flow geometry related: position of cylinder in x-direction
   !re: Reynolds number
   !uu: characteristic velocity magnitude
   !ma: Mach number
-  !radius: cylinder radius, half of charlength in this case
+  !radius: cylinder flow geometry related: cylinder radius, half of charlength in this case
   double precision charlength,pos,re,uu,ma,radius
   !nu: kinematic viscosity
   !rho0: fluid density
@@ -24,7 +25,7 @@ module initialization
   !iter: iteration index
   !interv: time interval size(in lattice unit) for monitor/output
   integer max_step,iter,interv
-  !count: output time index
+  !count: output count
   integer count
 
   !t: lattice weights
@@ -39,14 +40,14 @@ module initialization
   double precision,dimension(:),allocatable::p
   !flag: geometry flag array
   integer,dimension(:),allocatable::geo
-  !boundary id:
+  !Vectors that store boundary points' indices: l-left, r-right, u-top, d-bottom, _user-user defined
   integer,dimension(:),allocatable::bl,br,bu,bd,b_user
-  !fluid id:
+  !Vector that store fluid bulk points' indices:
   integer,dimension(:),allocatable::fluid_id
-  !size of id arrays
+  !Size of index vectors
   integer size_fluid,l_size,r_size,u_size,d_size,user_size
 
-  !momentum: momentum array
+  !u: velocity array
   double precision,dimension(:),allocatable::u
 
   
@@ -160,7 +161,7 @@ contains
   endsubroutine DeAllocateArrays  
 
   !---------------------------------------------
-  !SetGeometry: This subroutine initializes the flag array according to the geometry
+  !SetGeometry: This subroutine initializes the flag array according to the given geometry
   subroutine SetGeometry 
     integer i,j,id,idn,x,y,idl,idr,idu,idd,id_user,iq
     logical flag
@@ -179,7 +180,8 @@ contains
           if(x>=0.and.x<local_length(1).and.y>=0.and.y<local_length(2))then
              x=x+local_start(1)
              y=y+local_start(2)
-
+             !Coordinates obtained.
+             
              geo(id)=0
              !Cylinder
              if(dble((x-pos)**2+(y-ny/2.d0)**2).gt.radius**2)then
@@ -212,6 +214,7 @@ contains
        enddo
     enddo
 
+    !Flag communication
     call PassInt(geo)
     
     size_fluid=idn
@@ -220,7 +223,7 @@ contains
     u_size=idu
     d_size=idd
     
-    !User defined boundary
+    !User defined boundary (cylinder)
     flag=.false.
     id_user=0
     do idn=0,size_fluid-1
@@ -243,16 +246,16 @@ contains
   endsubroutine SetGeometry
 
   !--------------------------------------
+  !This subroutine initializes velocity and pressure fields. This suboutine can be offloaded to devices.
   subroutine InitUP
     integer i,j,id
     double precision r,y
     double precision r_vec(0:99)
     !Generate random number vector on CPU
-    call random_number(r_vec)
-    
+    call random_number(r_vec) 
     
     !Initilize momentum, pressure
-    !$OMP TARGET TEAMS DISTRIBUTE collapse(2) map(to:r_vec) private(j,i,r,y,id)
+    !$OMP TARGET TEAMS DISTRIBUTE collapse(2) map(to:r_vec) private(r,y,id)
     do j=0,local_length(2)-1
        do i=0,local_length(1)-1
 

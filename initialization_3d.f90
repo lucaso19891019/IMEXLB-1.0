@@ -2,14 +2,15 @@
 module initialization
   !This module includes the variables and subroutines for fluid initialization.
   use cart_mpi
+  use omp_lib
   implicit none
 
   !charlength: characteristic length
-  !pos: position of cylinder in x-direction
+  !pos: cylinder flow geometry related: position of cylinder in x-direction
   !re: Reynolds number
   !uu: characteristic velocity magnitude
   !ma: Mach number
-  !radius: cylinder radius, half of charlength in this case
+  !radius: cylinder flow geometry related: cylinder radius, half of charlength in this case
   double precision charlength,pos,re,uu,ma,radius
   !nu: kinematic viscosity
   !rho0: fluid density
@@ -24,7 +25,7 @@ module initialization
   !iter: iteration index
   !interv: time interval size(in lattice unit) for monitor/output
   integer max_step,iter,interv
-  !count: output time index
+  !count: output count
   integer count
 
   !t: lattice weights
@@ -39,14 +40,14 @@ module initialization
   double precision,dimension(:),allocatable::p
   !flag: geometry flag array
   integer,dimension(:),allocatable::geo
-  !boundary id:
+  !Vectors that store boundary points' indices: l-left, r-right, u-top, d-bottom, _user-user defined
   integer,dimension(:),allocatable::bl,br,bu,bd,bf,bb,b_user
-  !fluid id:
+  !Vector that store fluid bulk points' indices:
   integer,dimension(:),allocatable::fluid_id
-  !size of id arrays
+  !Size of index vectors
   integer size_fluid,l_size,r_size,u_size,d_size,f_size,b_size,user_size
 
-  !momentum: momentum array
+  !u: velocity array
   double precision,dimension(:),allocatable::u
 
   
@@ -100,12 +101,7 @@ contains
 
   !---------------------------------------------
   !InitLattice: This subroutine defines the lattice velocites and weights
-  !Numbering of D2Q9 lattice directions:
-  !   2  5  8
-  !    \ | /
-  !   1--4--7
-  !    / | \
-  !   0  3  6
+  !Numbering of D3Q27 lattice directions: (see order of directions in paper.)
   subroutine InitLattice
     integer i,j,k,iq   
     !Lattice velocities and weights(3D)
@@ -167,7 +163,7 @@ contains
   endsubroutine DeAllocateArrays  
 
   !---------------------------------------------
-  !SetGeometry: This subroutine initializes the flag array according to the geometry
+  !SetGeometry: This subroutine initializes the flag array according to the given geometry
   subroutine SetGeometry 
     integer i,j,k,id,idn,x,y,z,idl,idr,idu,idf,idb,idd,id_user,iq
     logical flag
@@ -191,6 +187,7 @@ contains
              x=x+local_start(1)
              y=y+local_start(2)
              z=z+local_start(3)
+             !Coordinates obtained.
 
              geo(id)=0
              !Sphere
@@ -233,6 +230,7 @@ contains
        enddo
     enddo
 
+    !Flag communication
     call PassInt(geo)
     
     size_fluid=idn
@@ -243,7 +241,7 @@ contains
     f_size=idf
     b_size=idb
     
-    !User defined boundary
+    !User defined boundary (sphere)
     flag=.false.
     id_user=0
     do idn=0,size_fluid-1
@@ -267,18 +265,23 @@ contains
 
   !--------------------------------------
   subroutine InitUP
+    !This subroutine initializes velocity and pressure fields. This suboutine can be offloaded to devices.
     integer i,j,k,id
     double precision r,z
+    double precision r_vec(0:99)
+    !Generate random number vector on CPU
+    call random_number(r_vec)
+    
     !Initilize momentum, pressure
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO collapse(3) private(id,r,z) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE collapse(3) map(to:r_vec) private(r,z,id)
     do k=0,local_length(3)-1
        do j=0,local_length(2)-1
           do i=0,local_length(1)-1
-             !Perturbation
-             call random_number(r)
-             r=1.d0+(r-0.5d0)*2.d0*0.2d0
-             z=k+local_start(3)
              id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost)
+             !Perturbation
+             r=1.d0+(r_vec(mod(id,100))-0.5d0)*2.d0*0.2d0
+             z=k+local_start(3)
+             
              p(id)=0.d0
              u(id*dim)=uu*4.d0*z*(nz-z)/nz**2*r*geo(id) 
              u(id*dim+1)=0.d0
@@ -286,7 +289,7 @@ contains
           enddo
        enddo
     enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
+    !$OMP END TARGET TEAMS DISTRIBUTE
   endsubroutine InitUP 
 
 endmodule initialization
