@@ -3,3 +3,4 @@ This code package simulates the fuild with lattice Boltzmann method. It can solv
 The example problem is cylinder flow (2D) and sphere flow (3D).
 Use nvhpc-mpi compiler.
 For 3D applications, add "_3d" to the file names in Makefile.
+Run the code with command: mpirun -np (# of processors) run
