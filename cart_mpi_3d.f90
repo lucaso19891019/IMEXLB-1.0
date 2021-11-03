@@ -39,9 +39,9 @@ module cart_mpi
   integer,dimension(0:num_neighbors)::neighbor_procs
   !Subarray datatypes for receiving data from each neighbor processor
   !Note: INT-integer, F-PDF (or variable of same dimension), U-Velocity (or variable of same dimension), DPR-double precision, LOG-logical
-  integer,dimension(0:num_neighbors)::INT_RECV_TYPE,F_RECV_TYPE,DPR_RECV_TYPE,LOG_RECV_TYPE
+  integer,dimension(0:num_neighbors)::INT_RECV_TYPE,F_RECV_TYPE,U_RECV_TYPE,DPR_RECV_TYPE,LOG_RECV_TYPE
   !Subarray datatypes for sending data to each neighbor processor
-  integer,dimension(0:num_neighbors)::INT_SEND_TYPE,F_SEND_TYPE,DPR_SEND_TYPE,LOG_SEND_TYPE
+  integer,dimension(0:num_neighbors)::INT_SEND_TYPE,F_SEND_TYPE,U_SEND_TYPE,DPR_SEND_TYPE,LOG_SEND_TYPE
 
 contains
   !MPISetup: By calling other subroutines, this subroutine generates a cartesian MPI communicator, and defines the arrays distributed to each MPI processor as well as the data types for sending and receiving subarrays.
