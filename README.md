@@ -20,7 +20,8 @@ The code has currently been tested on ALCF's [ThetaGPU](https://www.alcf.anl.gov
 
 From the ThetaGPU login, please request a node. For example:
 
-```qsub -I --attrs pubnet=true -A IMEXLBM -n 1 -q single-gpu -t 30
+```
+qsub -I --attrs pubnet=true -A IMEXLBM -n 1 -q single-gpu -t 30
 ```
 
 Use nvhpc-mpi compiler.
