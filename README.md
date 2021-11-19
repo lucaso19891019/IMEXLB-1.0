@@ -16,7 +16,7 @@ LBM is a relatively novel approach to solve the Navier-Stokes equations (NSE) in
 * Example problem is flow past a circle (2D) and sphere(3D). 
 
 ## Building
-Use nvhpc-mpi compiler.
+The code has currently been tested on ALCF's [ThetaGPU](https://www.alcf.anl.gov/support-center/theta/theta-thetagpu-overview). Use nvhpc-mpi compiler.
 For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: mpirun -np (# of processors) run.
 
 
