@@ -24,9 +24,11 @@ From the ThetaGPU login, please request a node. For example:
 qsub -I --attrs pubnet=true -A <YOUR_PROJECT_NAME> -n 1 -q single-gpu -t 30
 ```
 
-Use nvhpc-mpi compiler.
+Use nvhpc-mpi compiler by doing:
 
-
+```
+module load openmpi/openmpi-4.0.5_ucx-1.10.0_nvhpc-21.7
+```
 
 
 For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: mpirun -np (# of processors) run.
