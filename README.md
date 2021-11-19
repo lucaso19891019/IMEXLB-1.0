@@ -31,8 +31,11 @@ module load openmpi/openmpi-4.0.5_ucx-1.10.0_nvhpc-21.7
 make
 ```
 
-Note: For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: mpirun -np (# of processors) run.
+Note: For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: 
 
+```
+mpirun -np (# of processors) run
+```
 
 ## Acknowledgments
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy's Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation's exascale computing imperative.
