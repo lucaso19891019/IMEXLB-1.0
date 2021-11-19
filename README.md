@@ -10,10 +10,14 @@ LBM is a relatively novel approach to solve the Navier-Stokes equations (NSE) in
 
 
 ## Code Characteristics
-It can solve 2D and 3D problem. The code is accelerated by MPI and OpenMP GPU offloading directives. The example problem is cylinder flow (2D) and sphere flow (3D). Use nvhpc-mpi compiler.
-For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: mpirun -np (# of processors) run.
+
+* 2D (D2Q9) and 3D (D3Q19) problems 
+* MPI+OpenMP hybrid parallelism with GPU offloading directives 
+* Example problem is flow past a circle (2D) and sphere(3D). 
 
 ## Building
+Use nvhpc-mpi compiler.
+For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: mpirun -np (# of processors) run.
 
 
 ## Acknowledgments
