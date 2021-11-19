@@ -19,7 +19,7 @@ For 3D applications, add "_3d" to the file names in Makefile. Run the code with 
 ## Acknowledgments
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy's Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation's exascale computing imperative.
 
-
+If you want to cite IMEXLB please use: 
 >David F. Richards, et al., “,FY21 Proxy App Suite Release: Report for ECP Proxy App Project Milestone ADCD504-12” LLNL-TR-827482, Sept. 2021.https://proxyapps.exascaleproject.org/wp-content/uploads/2021/10/proxyReport21.pdf
 
 ## Development Team
