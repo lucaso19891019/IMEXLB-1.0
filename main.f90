@@ -24,7 +24,7 @@ program main
   call SetGeometry
   
   !OpenMP GPU parallelization: global offloading
-  gpuid=mod(rank,4)+1!# of GPU per node: 4
+  gpuid=mod(rank,8)+1!# of GPU per node: 8
   !$OMP TARGET ENTER DATA map(to:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id) device(gpuid)
   !Device number to be changed for cross node implementations.
   
