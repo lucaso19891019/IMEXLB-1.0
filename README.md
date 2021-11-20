@@ -27,11 +27,11 @@ qsub -I --attrs pubnet=true -A <YOUR_PROJECT_NAME> -n 1 -q single-gpu -t 30
 Please clone this code and use the available nvhpc-mpi compiler by doing:
 
 ```
-module load openmpi/openmpi-4.0.5_ucx-1.10.0_nvhpc-21.7
+module load nvhpc-mpi
 make
 ```
 
-Note: For 3D applications, add "_3d" to the file names in Makefile. Run the code with command: 
+Note: For 3D applications, add "_3d" to the file names in Makefile except for "main.f90". Run the code with command: 
 
 ```
 mpirun -np (# of processors) run
