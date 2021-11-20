@@ -227,7 +227,7 @@ contains
   end subroutine Monitor
 
   !---------------------------------------------
-  !Output: This subourtine writes the result to a single binary file in PLT format.
+  !WriteBinary: This subourtine writes the result to a single binary file in PLT format.
   subroutine WriteBinary
     character filename*20,num*3
     integer i,j,ind
