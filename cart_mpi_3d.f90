@@ -332,6 +332,44 @@ subroutine PassF(Array)
       call MPI_BARRIER(CART_COMM,ierr)
 
    enddo
-endsubroutine PassInt
+ endsubroutine PassInt
+
+ subroutine PassD(Array)
+  double precision,dimension(0:array_size-1)::array
+  !neighbor_local_rank:local(relative) rank of neighbor
+  !neighbor_oppos_rank: local(relative) rank of neighbor opposite to neighbor_local_rank
+  integer neighbor_local_rank,neighbor_oppos_rank
+  
+   !Requests and communication status.
+   integer,dimension(0:num_neighbors,2):: req
+   integer,dimension(MPI_STATUS_SIZE,0:num_neighbors,2) :: communication_status
+
+   call MPI_BARRIER(CART_COMM,ierr)
+
+   !Communication
+   do neighbor_local_rank=0,num_neighbors/2-1
+
+      neighbor_oppos_rank=num_neighbors-neighbor_local_rank
+
+      call MPI_ISEND(Array,1,DPR_SEND_TYPE(neighbor_local_rank),neighbor_procs(neighbor_local_rank),&
+           &neighbor_local_rank,CART_COMM,req(neighbor_local_rank,1),ierr)
+      call MPI_IRECV(Array,1,DPR_RECV_TYPE(neighbor_oppos_rank),neighbor_procs(neighbor_oppos_rank),&
+           &neighbor_local_rank,CART_COMM,req(neighbor_local_rank,2),ierr)
+      call MPI_WAIT(req(neighbor_local_rank,2),communication_status(:,neighbor_local_rank,2),ierr)
+      call MPI_WAIT(req(neighbor_local_rank,1),communication_status(:,neighbor_local_rank,1),ierr)
+
+      call MPI_BARRIER(CART_COMM,ierr)
+
+      call MPI_ISEND(Array,1,DPR_SEND_TYPE(neighbor_oppos_rank),neighbor_procs(neighbor_oppos_rank),&
+           &neighbor_oppos_rank,CART_COMM,req(neighbor_oppos_rank,1),ierr) 
+      call MPI_IRECV(Array,1,DPR_RECV_TYPE(neighbor_local_rank),neighbor_procs(neighbor_local_rank),&
+           &neighbor_oppos_rank,CART_COMM,req(neighbor_oppos_rank,2),ierr)
+      call MPI_WAIT(req(neighbor_oppos_rank,2),communication_status(:,neighbor_oppos_rank,2),ierr)
+      call MPI_WAIT(req(neighbor_oppos_rank,1),communication_status(:,neighbor_oppos_rank,1),ierr)
+
+      call MPI_BARRIER(CART_COMM,ierr)
+
+   enddo
+endsubroutine PassD
  
 endmodule cart_mpi

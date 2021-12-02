@@ -23,25 +23,51 @@ contains
   !InitPDF: This subroutine initializes the PDFs. This subroutine can be offloaded to devices.
   subroutine InitPDF
     integer idn,id,iq,ind
-    double precision udu,edu
+    double precision udu,edu,gamma,eddrhoc,eddcpc,uddc
 
+    call Laplacian
+
+    do idn=0,size_fluid-1
+       id=fluid_id(idn)
+       cp(id)=2.d0*beta*((rho(id)-rhol)*(rho(id)-rhov)*(2.d0*rho(id)-rhol-rhov)&
+            -(ep*(rhol-rhov)/4.d0)**2*lap(id))
+    enddo
+    call PassD(cp)
+    
+    call GradC(dcrho,rho)
+    call GradC(dccp,cp)
+
+    call GradM(dmrho,rho)
+    
     !Initialize PDF
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu) 
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
+       uddc=0.d0
        do ind=0,dim-1
           udu=udu+u(id*dim+ind)**2
+          uddc=uddc+&
+               u(id*dim+ind)*(dcrho(id*dim+ind)-3.d0*rho(id)*&
+               dccp(id*dim+ind))
        enddo
 
+       
        do iq=0,nq-1
           edu=0.d0
           do ind=0,dim-1
              edu=edu+e(iq*dim+ind)*u(id*dim+ind)
           enddo
 
-          !Initialize the PDFs with equilibrium values (incompressible model)
-          f(id*nq+iq)=t(iq)*(p(id)*3.d0+rho0*(3*edu+4.5*edu**2-1.5*udu))
+          !Initialize the PDFs with equilibrium values
+          gamma=t(iq)*(1.d0+(3*edu+4.5*edu**2-1.5*udu))
+
+          eddrhoc=0.5d0*(rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -rho(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
+          eddcpc=0.5d0*(cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
+
+          f(id*nq+iq)=gamma*rho(id)-0.5*gamma*(eddrhoc-3.d0*rho(id)*eddcpc-uddc*dt)
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE    
@@ -51,14 +77,25 @@ contains
   !Collision: This subroutine is the collision process of LBM. The collision result of array f is stored in array fb. This subroutine can be offloaded to devices.
   subroutine Collision
     integer idn,id,iq,ind
-    double precision udu,edu,feq
+    double precision udu,edu,feq,gamma,eddrhoc,eddcpc,uddc,eddrhom,eddcpm,uddm
 
+    call GradM(dmrho,rho)
+    call GradM(dmcp,cp)
+    
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu,feq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
+       uddc=0.d0
+       uddm=0.d0
        do ind=0,dim-1
           udu=udu+u(id*dim+ind)**2
+          uddc=uddc+&
+               u(id*dim+ind)*(dcrho(id*dim+ind)-3.d0*rho(id)*&
+               dccp(id*dim+ind))
+          uddm=uddm+&
+               u(id*dim+ind)*(dmrho(id*dim+ind)-3.d0*rho(id)*&
+               dmcp(id*dim+ind))
        enddo
 
        do iq=0,nq-1
@@ -67,8 +104,24 @@ contains
              edu=edu+e(iq*dim+ind)*u(id*dim+ind)
           enddo
           
-          feq=t(iq)*(p(id)*3.d0+rho0*(3*edu+4.5*edu**2-1.5*udu))
-          fb(id*nq+iq)=(1-ome)*f(id*nq+iq)+ome*feq
+          eddrhoc=0.5d0*(rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -rho(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
+          eddcpc=0.5d0*(cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
+
+          feq=gamma*rho(id)-0.5*gamma*(eddrhoc-3.d0*rho(id)*eddcpc-uddc*dt)
+
+          eddrhom=0.25d0*(5.d0*rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -3.d0*rho(id)&
+               -rho(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
+               -rho(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
+          eddcpm=0.25d0*(5.d0*cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -3.d0*cp(id)&
+               -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
+               -cp(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
+          
+          fb(id*nq+iq)=(1-ome(id))*f(id*nq+iq)+ome(id)*feq&
+               +gamma*(eddrhom-3.d0*rho(id)*eddcpm-uddm*dt)
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -85,7 +138,8 @@ contains
     do idn=0,size_fluid-1
        id=fluid_id(idn)      
        do iq=0,nq-1
-          f(id*nq+iq)=fb((id-e(iq*dim)-(local_length(1)+2*ghost)*e(iq*dim+1)-(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+iq)
+          f(id*nq+iq)=fb((id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
+               *nq+iq)
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -102,103 +156,58 @@ contains
     !$OMP TARGET UPDATE to(fb)
     
 
-    !Up Wall
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
-    do idn=0,u_size-1
-       id=bu(idn)
-       do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
-       enddo
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
-
-    !Down Wall
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
-    do idn=0,d_size-1
-       id=bd(idn)
-       do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
-       enddo
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
-
-    !Front and Back walls are periodic.
-    
-    !User Boundary
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
-    do idn=0,user_size-1
-       id=b_user(idn)
-       do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
-       enddo
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
-!--------------------------------------------------------------------------
-    !Inlet condition: gradient free condition in boundary normal direction
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
-    do idn=0,l_size-1
-       id=bl(idn)
-       do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+1)*nq+iq)        
-       enddo
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
-
-    !Outlet condition: gradient free condition along characteristics
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
-    do idn=0,r_size-1
-       id=br(idn)
-       do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+e(iq*dim)+(local_length(1)+2*ghost)*e(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+iq)        
-       enddo
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
-
   endsubroutine BoundaryCondition
 
   !---------------------------------------------
   !PostProcessing: This subroutine evalutes the physical properties, including pressure and velocity. It can also include some post-propagation boundary conditions. This subroutine can be offloaded to devices. 
   subroutine PostProcessing
 
-    integer idn,id,iq,z
+    integer idn,id,iq,ind
+    double precision phi
 
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
-       p(id)=0
+       rho(id)=0.d0
+       do iq=0,nq-1
+          rho(id)=rho(id)+f(id*nq+iq)
+       enddo
+       phi=(rhol-rho(id))/(rhol-rhov)
+       ome(id) = phi/(tauv+0.5)+(1.d0-phi)/(taul+0.5)
+    enddo
+    !$OMP END TARGET TEAMS DISTRIBUTE
+
+    call Laplacian
+
+    do idn=0,size_fluid-1
+       id=fluid_id(idn)
+       cp(id)=2.d0*beta*((rho(id)-rhol)*(rho(id)-rhov)*(2.d0*rho(id)-rhol-rhov)&
+            -(ep*(rhol-rhov)/4.d0)**2*lap(id))
+    enddo
+    call PassD(cp)
+
+    call GradC(dcrho,rho)
+    call GradC(dccp,cp)
+    
+    
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq)
+    do idn=0,size_fluid-1
+       id=fluid_id(idn)      
        do ind=0,dim-1
           u(id*dim+ind)=0
        enddo
        do iq=0,nq-1
-          p(id)=p(id)+f(id*nq+iq)
           do ind=0,dim-1
              u(id*dim+ind)=u(id*dim+ind)+f(id*nq+iq)*e(iq*dim+ind)
           enddo
        enddo
        do ind=0,dim-1
-          u(id*dim+ind)=u(id*dim+ind)/rho0*geo(id)
+          u(id*dim+ind)=(u(id*dim+ind)+&
+               0.5*dt*(dcrho(id*dim+ind)/3.d0-rho(id)*dccp(id*dim+ind)))/rho(id)
        enddo
-       p(id)=p(id)/3.d0*geo(id)
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
-!----------------------------------------------------------------------------------
-    !Boundary Condition
-    !Dirichlet boundary condition for inlet
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,y)
-    do idn=0,l_size-1
-       id=bl(idn)+1
-       z=id/((local_length(1)+2*ghost)*(local_length(2)+2*ghost))-ghost+local_start(3)
-       u(id*dim)=uu*rho0*4.d0*z*(nz-z)/nz**2
-       u(id*dim+1)=0.d0
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
-    !0 pressure condition for outlet
-    !$OMP TARGET TEAMS DISTRIBUTE  private(idn,id)
-    do idn=0,r_size-1
-       id=br(idn)-1
-       p(id)=0
-    enddo
-    !$OMP END TARGET TEAMS DISTRIBUTE
+
 
   endsubroutine PostProcessing
 
@@ -234,10 +243,10 @@ contains
     character filename*20,num*3
     integer i,j,k,ind
     integer numvars !Number of Variables, including the coordinates
-    double precision uxmax,       uymax,       uzmax,       pmax
-    double precision uxmin,       uymin,       uzmin,       pmin
-    double precision uxmax_global,uymax_global,uzmax_global,pmax_global
-    double precision uxmin_global,uymin_global,uzmin_global,pmin_global
+    double precision uxmax,       uymax,       uzmax,       cpmax,       rhomax
+    double precision uxmin,       uymin,       uzmin,       cpmin,       rhomin
+    double precision uxmax_global,uymax_global,uzmax_global,cpmax_global,rhomax_global
+    double precision uxmin_global,uymin_global,uzmin_global,cpmin_global,rhomin_global
     integer file,request,write_3d_type,write_type
     integer print_size
     
@@ -255,7 +264,7 @@ contains
        call MPI_FILE_OPEN(CART_COMM,filename,MPI_MODE_CREATE+MPI_MODE_WRONLY,mpi_INFO_NULL,file,ierr)
     endif
 
-    numvars=3+4 !3 coordinates (x,y,z), 4 fields(p,ux,uy,uz)
+    numvars=3+5 !3 coordinates (x,y,z), 5 fields(rho,cp,ux,uy,uz)
     
     if(rank==0)then
        offset=0
@@ -265,12 +274,12 @@ contains
        call MPI_FILE_IWRITE(file,'#!TDV112',print_size,MPI_CHARACTER,request,ierr)
        offset=offset+print_size
        
-       print_size=4+numvars  +6           +1         +1         +1 +1 +2 +2 +2
+       print_size=4+numvars  +6           +1         +1         +1 +3 +2 +2 +2 +2
             !                 Len(Title)|  len(var1)| len(var2)|...        
        call MPI_FILE_IWRITE(file,(/1,0,        str2ascii('Sphere',6),0,  numvars,&
             !                        FullData| Title
-            ichar('x'),0,ichar('y'),0,ichar('z'),0,ichar('p'),0,str2ascii('ux',2),0,&
-            str2ascii('uy',2),0,str2ascii('uz',2),0/)&
+            ichar('x'),0,ichar('y'),0,ichar('z'),0,str2ascii('rho',3),0,str2ascii('cp',2),0,&
+            str2ascii('ux',2),0,str2ascii('uy',2),0,str2ascii('uz',2),0/)&
             !Variable Names            
             ,print_size,MPI_INTEGER,request,ierr)
        !Note that integer 0 comes after any string
@@ -299,7 +308,7 @@ contains
        offset=offset+8
 
        print_size=numvars+3
-       call MPI_FILE_IWRITE(file,(/2, 2, 2, 2, 2, 2, 2,       0,0,-1/)&
+       call MPI_FILE_IWRITE(file,(/2, 2, 2, 2, 2, 2, 2, 2,       0,0,-1/)&
             !            VariableFormat:1.Float,2.Double
             ,print_size,MPI_INTEGER,request,ierr)
        offset=offset+print_size*4      
@@ -313,20 +322,24 @@ contains
     uymin=0.d0
     uzmax=0.d0
     uzmin=0.d0
-    pmax=0.d0        
-    pmin=0.d0
+    cpmax=0.d0        
+    cpmin=0.d0
+    rhomax=0.5d0
+    rhomin=0.5d0
     !OpenMP reduction
     !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:uxmax,uxmin,uymax,uymin,uzmax,uzmin,pmax,pmin) private(id) reduction(max:uxmax,uymax,uzmax,pmax) reduction(min:uxmmin,uymin,uzmin,pmin) schedule(static,1)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
-       uxmax=max(uxmax,u(id*dim))
-       uxmin=min(uxmin,u(id*dim))
-       uymax=max(uymax,u(id*dim+1))
-       uymin=min(uymin,u(id*dim+1))
-       uzmax=max(uzmax,u(id*dim+2))
-       uzmin=min(uzmin,u(id*dim+2))
-       pmax=max(pmax,p(id))      
-       pmin=min(pmin,p(id))
+       uxmax=max(uxmax,dmrho(id*dim))
+       uxmin=min(uxmin,dmrho(id*dim))
+       uymax=max(uymax,dmrho(id*dim+1))
+       uymin=min(uymin,dmrho(id*dim+1))
+       uzmax=max(uzmax,dmrho(id*dim+2))
+       uzmin=min(uzmin,dmrho(id*dim+2))
+       cpmax=max(cpmax,cp(id))      
+       cpmin=min(cpmin,cp(id))
+       rhomax=max(rhomax,rho(id))      
+       rhomin=min(rhomin,rho(id))
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE PARALLEL DO
     call MPI_BARRIER(CART_COMM,ierr)
@@ -337,14 +350,16 @@ contains
     call MPI_REDUCE(uymin,uymin_global,1,MPI_DOUBLE_PRECISION,MPI_MIN,0,CART_COMM,ierr)
     call MPI_REDUCE(uzmax,uzmax_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
     call MPI_REDUCE(uzmin,uzmin_global,1,MPI_DOUBLE_PRECISION,MPI_MIN,0,CART_COMM,ierr)
-    call MPI_REDUCE(pmax,pmax_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
-    call MPI_REDUCE(pmin,pmin_global,1,MPI_DOUBLE_PRECISION,MPI_MIN,0,CART_COMM,ierr)
+    call MPI_REDUCE(cpmax,cpmax_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
+    call MPI_REDUCE(cpmin,cpmin_global,1,MPI_DOUBLE_PRECISION,MPI_MIN,0,CART_COMM,ierr)
+    call MPI_REDUCE(rhomax,rhomax_global,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,CART_COMM,ierr)
+    call MPI_REDUCE(rhomin,rhomin_global,1,MPI_DOUBLE_PRECISION,MPI_MIN,0,CART_COMM,ierr)
     
     !Write variable limits
     if(rank==0)then
        call MPI_FILE_IWRITE(file,(/0.d0,(nx/charlength),0.d0,(ny/charlength),0.d0,(nz/charlength),&
        !                           xmin,xmax            ymin,ymax            zmin,zmax
-            pmin_global*charlength/t_intv**2,pmax_global*charlength/t_intv**2,&
+            rhomin_global,rhomax_global,cpmin_global,cpmax_global,&
             uxmin_global/(charlength*t_intv),uxmax_global/(charlength*t_intv),&
             uymin_global/(charlength*t_intv),uymax_global/(charlength*t_intv),&
             uzmin_global/(charlength*t_intv),uzmax_global/(charlength*t_intv)/),&   
@@ -356,7 +371,8 @@ contains
     call MPI_Bcast(offset, 1, MPI_INTEGER, 0, CART_COMM,ierr)
     
     !SetWritingView    
-    call MPI_TYPE_CREATE_SUBARRAY(dim,global_length,local_length,local_start,MPI_ORDER_FORTRAN,MPI_DOUBLE_PRECISION,write_3d_type,ierr)
+    call MPI_TYPE_CREATE_SUBARRAY(dim,global_length,local_length,local_start,&
+         MPI_ORDER_FORTRAN,MPI_DOUBLE_PRECISION,write_3d_type,ierr)
     call MPI_TYPE_CONTIGUOUS(numvars*1,write_3d_type,write_type,ierr)
     call MPI_TYPE_COMMIT(write_type,ierr)
     call MPI_FILE_SET_VIEW(file,offset,MPI_DOUBLE_PRECISION,write_type,"native",MPI_INFO_NULL,ierr)
@@ -403,9 +419,17 @@ contains
        do j=0,local_length(2)-1
           do i=0,local_length(1)-1      
              buffer(i+j*local_length(1)+k*local_length(1)*local_length(2)+1)=&
-                  p((i+ghost)+(local_length(1)+2*ghost)*(j+ghost)&
-                  +(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost))&
-                  *charlength/t_intv**2!Unit conversion
+                  rho((i+ghost)+dy*(j+ghost)+dz*(k+ghost))             
+          enddo
+       enddo
+    enddo
+    call MPI_FILE_WRITE_ALL(file,buffer,print_size,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
+    
+    do k=0,local_length(3)-1
+       do j=0,local_length(2)-1
+          do i=0,local_length(1)-1      
+             buffer(i+j*local_length(1)+k*local_length(1)*local_length(2)+1)=&
+                  cp((i+ghost)+dy*(j+ghost)+dz*(k+ghost))
           enddo
        enddo
     enddo
@@ -416,9 +440,8 @@ contains
           do j=0,local_length(2)-1
              do i=0,local_length(1)-1      
                 buffer(i+j*local_length(1)+k*local_length(1)*local_length(2)+1)=&
-                     u(((i+ghost)+(local_length(1)+2*ghost)*(j+ghost)&
-                     +(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost))*dim+ind)&
-                     /(charlength*t_intv)!Unit conversion
+                     dmrho(((i+ghost)+dy*(j+ghost)+dz*(k+ghost))*dim+ind)!&
+                     !/(charlength*t_intv)!Unit conversion
              enddo
           enddo
        enddo
@@ -448,4 +471,75 @@ contains
     
   endsubroutine WriteBinary
 
+  !------------------------------------------------------
+  !Laplacian
+  subroutine Laplacian
+    integer id,idn,iq
+    double precision diff
+    call PassD(rho)
+    do idn=0,size_fluid-1
+       id=fluid_id(idn)
+       lap(id)=0.d0
+       do iq=0,nq-1
+          diff=rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -2.d0*rho(id)&
+               +rho(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))
+          lap(id)=lap(id)+t(iq)*diff
+       enddo
+       lap(id)=lap(id)*3.d0
+    enddo
+  endsubroutine Laplacian
+
+  !------------------------------------------------------
+  !Central Gradient
+  subroutine GradC(dval,val)
+    double precision,dimension(0:array_size-1),intent(in)::val
+    double precision,dimension(0:array_size*dim-1),intent(out)::dval
+    integer id,idn,iq,ind
+    double precision diff
+    call PassD(val)
+    do idn=0,size_fluid-1
+       id=fluid_id(idn)
+       do ind=0,dim-1
+          dval(id*dim+ind)=0.d0
+       enddo
+       do iq=0,nq-1
+          diff=0.5d0*(val(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -val(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
+          do ind=0,dim-1
+             dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
+          enddo
+       enddo
+    enddo
+  endsubroutine GradC
+
+  !------------------------------------------------------
+  !Mixed Gradient
+  subroutine GradM(dval,val)
+    double precision,dimension(0:array_size-1),intent(in)::val
+    double precision,dimension(0:array_size*dim-1),intent(out)::dval
+    integer id,idn,iq,ind
+    double precision diff
+    call PassD(val)
+    do idn=0,size_fluid-1
+       id=fluid_id(idn)
+       do ind=0,dim-1
+          dval(id*dim+ind)=0.d0
+       enddo
+       do iq=0,nq-1
+          diff=0.25d0*(5.d0*val(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
+               -3.d0*val(id)&
+               -val(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
+               -val(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
+          do ind=0,dim-1
+             dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
+          enddo
+       enddo
+       dval(id*dim)=(val(id+1)&
+            -val(id-1))*0.5d0
+    enddo
+
+    
+  endsubroutine GradM
+  
 endmodule lbm

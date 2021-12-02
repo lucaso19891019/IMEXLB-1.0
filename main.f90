@@ -37,12 +37,12 @@ program main
   count=0!Output count
   
   !LBM loop 
-  do iter=0,max_step
+  do iter=0,0!max_step
 
      !print out maximum velocity magnitude every "interv" steps
      if (mod(iter,interv).eq.0)then        
         call Monitor
-!        call WriteBinary
+        call WriteBinary
         count=count+1
      endif
 
@@ -55,7 +55,7 @@ program main
   enddo
  
   !Write results to file
-  call WriteBinary
+  !call WriteBinary
 
   !$OMP TARGET EXIT DATA map(delete:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id)
 

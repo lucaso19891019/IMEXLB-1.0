@@ -5,22 +5,24 @@ module initialization
   use omp_lib
   implicit none
 
+  integer dy,dz
+
   !charlength: characteristic length
   !pos: cylinder flow geometry related: position of cylinder in x-direction
   !re: Reynolds number
   !uu: characteristic velocity magnitude
   !ma: Mach number
   !radius: cylinder flow geometry related: cylinder radius, half of charlength in this case
-  double precision charlength,pos,re,uu,ma,radius
+  double precision charlength,pos1,pos2,radius,beta
   !nu: kinematic viscosity
-  !rho0: fluid density
+  !rho: fluid density
   !dt: time increment
   !ome: relaxation parameter 1/(tau+0.5)
   !tau: relaxation time
   !t_intv: dimensionless time increment
   !inter: time interval size(dimensionless) for monitor/output
   !max_t: maximum time(dimensionless)
-  double precision nu,rho0,dt,ome,tau,t_intv,inter,max_t
+  double precision rhol,rhov,dt,taul,tauv,ep,t_intv,inter,max_t
   !max_step: maximum number of time steps
   !iter: iteration index
   !interv: time interval size(in lattice unit) for monitor/output
@@ -37,18 +39,15 @@ module initialization
   double precision,dimension(:),allocatable::f,fb
 
   !p: pressure array
-  double precision,dimension(:),allocatable::p
-  !flag: geometry flag array
-  integer,dimension(:),allocatable::geo
-  !Vectors that store boundary points' indices: l-left, r-right, u-top, d-bottom, _user-user defined
-  integer,dimension(:),allocatable::bl,br,bu,bd,bf,bb,b_user
+  double precision,dimension(:),allocatable::rho,ome,cp,lap
+  
   !Vector that store fluid bulk points' indices:
   integer,dimension(:),allocatable::fluid_id
   !Size of index vectors
-  integer size_fluid,l_size,r_size,u_size,d_size,f_size,b_size,user_size
+  integer size_fluid
 
   !u: velocity array
-  double precision,dimension(:),allocatable::u
+  double precision,dimension(:),allocatable::u,dcrho,dmrho,dccp,dmcp
 
   
        
@@ -58,40 +57,42 @@ contains
     
     open(100,file='input_3d.in',status='old')
     read(100,*)nx,ny,nz     
-    read(100,*)charlength,pos,re
+    read(100,*)charlength,pos1,pos2,beta
     !charlength & pos are given in the unit of nx, need to be converted to lattice unit.
     charlength=charlength*nx
-    pos=pos*nx
+    pos1=pos1*nx
+    pos2=pos2*nx
     !Read relaxation parameter
-    read(100,*)ome,dt,rho0
-    nu=(2.d0-ome)*dt/(6.d0*ome)    
+    read(100,*)taul,tauv,dt,rhol,rhov,ep
+ 
     !Read max time
     read(100,*)max_t,inter
-    t_intv=charlength**2/nu
-    interv=inter*t_intv
-    max_step=max_t*t_intv
+    
     close(100)
 
     !Derived phyical property
-    uu=re*nu/charlength
-    tau=3*nu
-    ma=uu*sqrt(3.d0)
-    radius=charlength*0.5d0  
+ 
+    
+    radius=charlength*0.5d0
+
+    t_intv=sqrt(rhol*radius**3*12.d0/((rhol-rhov)**4*beta*ep))
+    interv=inter*t_intv
+    max_step=max_t*t_intv
 
     !Display
     if(rank.eq.0)then
 
-       write(*,'(A24,F6.2)')   "Reynolds Number      :",re
-       write(*,'(A24,F6.2)')   "Characteristic Length:",charlength
-       write(*,'(A24,F6.2)')   "Ma                   :",ma
-       write(*,'(A24,F6.2)')   "Kinematic Viscosity  :",nu
-       write(*,'(A24,F6.2)')   "Relaxation Parameter :",ome
-       write(*,'(A24,F6.2)')   "Relaxation Time      :",tau
+       write(*,'(A24,F6.2)')   "Characteristic Length :",charlength
+       write(*,'(A24,F6.2)')   "Sigma                 :",(rhol-rhov)**4*ep*beta/12.d0
+  
+       write(*,'(A24,F6.2)')   "Relaxation Time Liquid:",taul
+       write(*,'(A24,F6.2)')   "Relaxation Time Vapor :",tauv
 
-       write(*,'(A24,F4.1)')   "Density              :",rho0
+       write(*,'(A24,F4.1)')   "Density Liquid        :",rhol
+       write(*,'(A24,F4.1)')   "Density Vapor         :",rhov
 
-       write(*,'(A24,I8)')     "Maximum # of Steps   :",max_step
-       write(*,'(A24,I8)')     "Interval Size        :",interv
+       write(*,'(A24,I8)')     "Maximum # of Steps    :",max_step
+       write(*,'(A24,I8)')     "Interval Size         :",interv
 
        write(*,*)"============================="
 
@@ -126,19 +127,20 @@ contains
     allocate(fb(0:array_size*nq-1))
 
 
-    allocate(p(0:array_size-1))
-    allocate(geo(0:array_size-1))
+    allocate(lap(0:array_size-1))
+    allocate(cp(0:array_size-1))
+    allocate(rho(0:array_size-1))
+    allocate(ome(0:array_size-1))
+
     allocate(fluid_id(0:array_size-1))
-    allocate(b_user(0:array_size-1))
+ 
 
     allocate(u(0:array_size*dim-1))
+    allocate(dcrho(0:array_size*dim-1))
+    allocate(dmrho(0:array_size*dim-1))
+    allocate(dccp(0:array_size*dim-1))
+    allocate(dmcp(0:array_size*dim-1))
 
-    allocate(br(0:(local_length(2)+2*ghost)*(local_length(3)+2*ghost)))
-    allocate(bl(0:(local_length(2)+2*ghost)*(local_length(3)+2*ghost)))
-    allocate(bu(0:(local_length(2)+2*ghost)*(local_length(1)+2*ghost)))
-    allocate(bd(0:(local_length(2)+2*ghost)*(local_length(1)+2*ghost)))
-    allocate(bf(0:(local_length(1)+2*ghost)*(local_length(3)+2*ghost)))
-    allocate(bb(0:(local_length(1)+2*ghost)*(local_length(3)+2*ghost)))
   endsubroutine AllocateArrays
   
   !-----------------------------------------------------
@@ -147,149 +149,98 @@ contains
     deallocate(f)
     deallocate(fb)
 
-    deallocate(p)
-    deallocate(geo)
+    deallocate(lap)
+    
+    deallocate(cp)
+    deallocate(rho)
+    deallocate(ome)
+
     deallocate(fluid_id)
-    deallocate(b_user)
     
     deallocate(u)
+    deallocate(dcrho)
+    deallocate(dmrho)
+    deallocate(dccp)
+    deallocate(dmcp)
     
-    deallocate(br)
-    deallocate(bl)
-    deallocate(bu)
-    deallocate(bd)
-    deallocate(bf)
-    deallocate(bb)
+    
   endsubroutine DeAllocateArrays  
 
   !---------------------------------------------
   !SetGeometry: This subroutine initializes the flag array according to the given geometry
   subroutine SetGeometry 
-    integer i,j,k,id,idn,x,y,z,idl,idr,idu,idf,idb,idd,id_user,iq
-    logical flag
+    integer i,j,k,x,y,z,id,idn
+    
+    dy=(local_length(1)+2*ghost)
+    dz=(local_length(1)+2*ghost)*(local_length(2)+2*ghost)
     idn=0
-    idl=0
-    idr=0
-    idu=0
-    idd=0
-    idf=0
-    idb=0
-
-    do k=0,local_length(3)+2
-    do j=0,local_length(2)+2
-       do i=0,local_length(1)+2
-          x=i-1
-          y=j-1
-          z=k-1
-          id=(i-1+ghost)+(local_length(1)+2*ghost)*(j-1+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k-1+ghost)
-          
-          if(x>=0.and.x<local_length(1).and.y>=0.and.y<local_length(2).and.z>=0.and.z<local_length(3))then
-             x=x+local_start(1)
-             y=y+local_start(2)
-             z=z+local_start(3)
+    
+    do k=0,local_length(3)-1
+       do j=0,local_length(2)-1
+          do i=0,local_length(1)-1
+             x=i+local_start(1)
+             y=j+local_start(2)
+             z=k+local_start(3)
              !Coordinates obtained.
 
-             geo(id)=0
-             !Sphere
-             if(dble((x-pos)**2+(y-ny/2.d0)**2+(z-nz/2.d0)**2).gt.radius**2)then
-                geo(id)=1
-                fluid_id(idn)=id
-                idn=idn+1
-             endif
-          else
-             x=x+local_start(1)
-             y=y+local_start(2)
-             z=z+local_start(3)
-             !Walls
-             if(x.eq.-1)then
-                bl(idl)=id
-                idl=idl+1               
-             endif
-             if(x.eq.nx+1)then
-                br(idr)=id
-                idr=idr+1
-             endif
-             if(y.eq.-1)then
-                bf(idf)=id
-                idf=idf+1
-             endif
-             if(y.eq.ny+1)then
-                bb(idb)=id
-                idb=idb+1
-             endif
-             if(z.eq.-1)then
-                bd(idd)=id
-                idd=idd+1
-             endif
-             if(z.eq.nz+1)then
-                bu(idu)=id
-                idu=idu+1
-             endif
-          endif
-       enddo
+             id=(i+ghost)+dy*(j+ghost)+dz*(k+ghost)
+
+
+             fluid_id(idn)=id
+             idn=idn+1                                
+          enddo
        enddo
     enddo
 
-    !Flag communication
-    call PassInt(geo)
-    
     size_fluid=idn
-    l_size=idl
-    r_size=idr
-    u_size=idu
-    d_size=idd
-    f_size=idf
-    b_size=idb
+
     
-    !User defined boundary (sphere)
-    flag=.false.
-    id_user=0
-    do idn=0,size_fluid-1
-       id=fluid_id(idn)
-       do iq=0,nq-1
-          if(geo(id)==0.and.geo(id+e(iq*dim)+(local_length(1)+2*ghost)*(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(iq*dim+2))==1)then
-             b_user(id_user)=id
-             id_user=id_user+1
-             flag=.true.
-             exit
-          endif
-       enddo
-       if(flag)then
-          flag=.false.
-          exit
-       endif
-    enddo
-    user_size=id_user
     
   endsubroutine SetGeometry
 
   !--------------------------------------
   subroutine InitUP
     !This subroutine initializes velocity and pressure fields. This suboutine can be offloaded to devices.
-    integer i,j,k,id
-    double precision r,z
-    double precision r_vec(0:99)
-    !Generate random number vector on CPU
-    call random_number(r_vec)
+    integer i,j,k,x,y,z,id
+    double precision dis1, dis2, phi
+    
+    
     
     !Initilize momentum, pressure
     !$OMP TARGET TEAMS DISTRIBUTE collapse(3) map(to:r_vec) private(r,z,id)
     do k=0,local_length(3)-1
        do j=0,local_length(2)-1
           do i=0,local_length(1)-1
-             id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*(k+ghost)
-             !Perturbation
-             r=1.d0+(r_vec(mod(id,100))-0.5d0)*2.d0*0.2d0
-             z=k+local_start(3)
              
-             p(id)=0.d0
-             u(id*dim)=uu*4.d0*z*(nz-z)/nz**2*r*geo(id) 
-             u(id*dim+1)=0.d0
-             u(id*dim+2)=0.d0
+             id=(i+ghost)+dy*(j+ghost)+dz*(k+ghost)
+             
+             x=i+local_start(1)
+             y=j+local_start(2)
+             z=k+local_start(3)
+             !Coordinates obtained.
+
+             !Sphere
+             dis1=sqrt(dble((x-nx/2.d0)**2+(y-pos1+ep/2)**2+(z-nz/2.d0)**2))-radius
+             dis2=sqrt(dble((x-nx/2.d0)**2+(y-pos2-ep/2)**2+(z-nz/2.d0)**2))-radius
+
+             phi=(tanh(2.d0*min(dis1,dis2)/ep)+1.d0)*0.5d0
+
+             
+             rho(id) = phi*rhov+(1.d0-phi)*rhol
+           
+             ome(id) = phi/(tauv+0.5)+(1.d0-phi)/(taul+0.5)
+             
+             cp(id)=0.d0
+
           enddo
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
-  endsubroutine InitUP 
+    call PassD(rho)
+    call PassD(ome)
+    call PassD(cp)
+  endsubroutine InitUP
+
+  
 
 endmodule initialization
