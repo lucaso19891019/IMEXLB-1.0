@@ -34,10 +34,12 @@ program main
   !Initialization of PDFs
   call InitPDF
 
+  call GradC(dcrho,rho)
+  
   count=0!Output count
   
   !LBM loop 
-  do iter=0,0!max_step
+  do iter=0,max_step
 
      !print out maximum velocity magnitude every "interv" steps
      if (mod(iter,interv).eq.0)then        

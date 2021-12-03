@@ -23,7 +23,7 @@ contains
   !InitPDF: This subroutine initializes the PDFs. This subroutine can be offloaded to devices.
   subroutine InitPDF
     integer idn,id,iq,ind
-    double precision udu,edu,gamma,eddrhoc,eddcpc,uddc
+    double precision udu,edu,gamma,eddrhoc,eddcpc,uddrhoc,uddcpc
 
     call Laplacian
 
@@ -36,20 +36,18 @@ contains
     
     call GradC(dcrho,rho)
     call GradC(dccp,cp)
-
-    call GradM(dmrho,rho)
     
     !Initialize PDF
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu) 
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
-       uddc=0.d0
+       uddrhoc=0.d0
+       uddcpc=0.d0
        do ind=0,dim-1
           udu=udu+u(id*dim+ind)**2
-          uddc=uddc+&
-               u(id*dim+ind)*(dcrho(id*dim+ind)-3.d0*rho(id)*&
-               dccp(id*dim+ind))
+          uddrhoc=uddrhoc+u(id*dim+ind)*dcrho(id*dim+ind)
+          uddcpc=uddcpc+u(id*dim+ind)*dccp(id*dim+ind)
        enddo
 
        
@@ -67,7 +65,7 @@ contains
           eddcpc=0.5d0*(cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
 
-          f(id*nq+iq)=gamma*rho(id)-0.5*gamma*(eddrhoc-3.d0*rho(id)*eddcpc-uddc*dt)
+          f(id*nq+iq)=gamma*rho(id)-0.5*gamma*(eddrhoc-uddrhoc*dt-3.d0*rho(id)*(eddcpc-uddcpc*dt))
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE    
@@ -77,7 +75,7 @@ contains
   !Collision: This subroutine is the collision process of LBM. The collision result of array f is stored in array fb. This subroutine can be offloaded to devices.
   subroutine Collision
     integer idn,id,iq,ind
-    double precision udu,edu,feq,gamma,eddrhoc,eddcpc,uddc,eddrhom,eddcpm,uddm
+    double precision udu,edu,feq,gamma,eddrhoc,eddcpc,uddrhoc,uddcpc,eddrhom,eddcpm,uddrhom,uddcpm
 
     call GradM(dmrho,rho)
     call GradM(dmcp,cp)
@@ -86,16 +84,16 @@ contains
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
-       uddc=0.d0
-       uddm=0.d0
+       uddrhoc=0.d0
+       uddcpc=0.d0
+       uddrhom=0.d0
+       uddcpm=0.d0
        do ind=0,dim-1
           udu=udu+u(id*dim+ind)**2
-          uddc=uddc+&
-               u(id*dim+ind)*(dcrho(id*dim+ind)-3.d0*rho(id)*&
-               dccp(id*dim+ind))
-          uddm=uddm+&
-               u(id*dim+ind)*(dmrho(id*dim+ind)-3.d0*rho(id)*&
-               dmcp(id*dim+ind))
+          uddrhoc=uddrhoc+u(id*dim+ind)*dcrho(id*dim+ind)
+          uddrhom=uddrhom+u(id*dim+ind)*dmrho(id*dim+ind)
+          uddcpc=uddcpc+u(id*dim+ind)*dccp(id*dim+ind)
+          uddcpm=uddcpm+u(id*dim+ind)*dmcp(id*dim+ind)
        enddo
 
        do iq=0,nq-1
@@ -103,13 +101,15 @@ contains
           do ind=0,dim-1
              edu=edu+e(iq*dim+ind)*u(id*dim+ind)
           enddo
+
+          gamma=t(iq)*(1.d0+(3*edu+4.5*edu**2-1.5*udu))
           
           eddrhoc=0.5d0*(rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -rho(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
           eddcpc=0.5d0*(cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
 
-          feq=gamma*rho(id)-0.5*gamma*(eddrhoc-3.d0*rho(id)*eddcpc-uddc*dt)
+          feq=gamma*rho(id)-0.5*gamma*(eddrhoc-uddrhoc*dt-3.d0*rho(id)*(eddcpc-uddcpc*dt))
 
           eddrhom=0.25d0*(5.d0*rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -3.d0*rho(id)&
@@ -119,9 +119,9 @@ contains
                -3.d0*cp(id)&
                -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
                -cp(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
-          
+
           fb(id*nq+iq)=(1-ome(id))*f(id*nq+iq)+ome(id)*feq&
-               +gamma*(eddrhom-3.d0*rho(id)*eddcpm-uddm*dt)
+               +gamma*(eddrhom-uddrhom*dt-3.d0*rho(id)*(eddcpm-uddcpm*dt))
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -330,12 +330,12 @@ contains
     !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:uxmax,uxmin,uymax,uymin,uzmax,uzmin,pmax,pmin) private(id) reduction(max:uxmax,uymax,uzmax,pmax) reduction(min:uxmmin,uymin,uzmin,pmin) schedule(static,1)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
-       uxmax=max(uxmax,dmrho(id*dim))
-       uxmin=min(uxmin,dmrho(id*dim))
-       uymax=max(uymax,dmrho(id*dim+1))
-       uymin=min(uymin,dmrho(id*dim+1))
-       uzmax=max(uzmax,dmrho(id*dim+2))
-       uzmin=min(uzmin,dmrho(id*dim+2))
+       uxmax=max(uxmax,dcrho(id*dim))
+       uxmin=min(uxmin,dcrho(id*dim))
+       uymax=max(uymax,dcrho(id*dim+1))
+       uymin=min(uymin,dcrho(id*dim+1))
+       uzmax=max(uzmax,dcrho(id*dim+2))
+       uzmin=min(uzmin,dcrho(id*dim+2))
        cpmax=max(cpmax,cp(id))      
        cpmin=min(cpmin,cp(id))
        rhomax=max(rhomax,rho(id))      
@@ -440,7 +440,7 @@ contains
           do j=0,local_length(2)-1
              do i=0,local_length(1)-1      
                 buffer(i+j*local_length(1)+k*local_length(1)*local_length(2)+1)=&
-                     dmrho(((i+ghost)+dy*(j+ghost)+dz*(k+ghost))*dim+ind)!&
+                     dcrho(((i+ghost)+dy*(j+ghost)+dz*(k+ghost))*dim+ind)!&
                      !/(charlength*t_intv)!Unit conversion
              enddo
           enddo
@@ -510,6 +510,7 @@ contains
              dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
           enddo
        enddo
+       
     enddo
   endsubroutine GradC
 
@@ -535,8 +536,7 @@ contains
              dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
           enddo
        enddo
-       dval(id*dim)=(val(id+1)&
-            -val(id-1))*0.5d0
+       
     enddo
 
     

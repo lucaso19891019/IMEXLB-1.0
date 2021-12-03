@@ -236,9 +236,6 @@ contains
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
-    call PassD(rho)
-    call PassD(ome)
-    call PassD(cp)
   endsubroutine InitUP
 
   
