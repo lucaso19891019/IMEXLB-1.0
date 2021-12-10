@@ -65,7 +65,7 @@ contains
           eddcpc=0.5d0*(cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
 
-          f(id*nq+iq)=gamma*rho(id)-0.5*gamma*(eddrhoc-uddrhoc*dt-3.d0*rho(id)*(eddcpc-uddcpc*dt))
+          f(id*nq+iq)=gamma*rho(id)-0.5*gamma*(eddrhoc-uddrhoc-3.d0*rho(id)*(eddcpc-uddcpc))
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE    
@@ -109,19 +109,19 @@ contains
           eddcpc=0.5d0*(cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2)))
 
-          feq=gamma*rho(id)-0.5*gamma*(eddrhoc-uddrhoc*dt-3.d0*rho(id)*(eddcpc-uddcpc*dt))
+          feq=gamma*rho(id)-0.5*gamma*(eddrhoc-uddrhoc-3.d0*rho(id)*(eddcpc-uddcpc))
 
           eddrhom=0.25d0*(5.d0*rho(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -3.d0*rho(id)&
                -rho(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
-               -rho(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
+               -rho(id+2*e(iq*dim)+2*dy*e(iq*dim+1)+2*dz*e(iq*dim+2)))
           eddcpm=0.25d0*(5.d0*cp(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -3.d0*cp(id)&
                -cp(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
-               -cp(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
+               -cp(id+2*e(iq*dim)+2*dy*e(iq*dim+1)+2*dz*e(iq*dim+2)))
 
           fb(id*nq+iq)=(1-ome(id))*f(id*nq+iq)+ome(id)*feq&
-               +gamma*(eddrhom-uddrhom*dt-3.d0*rho(id)*(eddcpm-uddcpm*dt))
+               +gamma*(eddrhom-uddrhom-3.d0*rho(id)*(eddcpm-uddcpm))
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -163,7 +163,7 @@ contains
   subroutine PostProcessing
 
     integer idn,id,iq,ind
-    double precision phi
+    double precision phi,tau
 
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,size_fluid-1
@@ -173,7 +173,8 @@ contains
           rho(id)=rho(id)+f(id*nq+iq)
        enddo
        phi=(rhol-rho(id))/(rhol-rhov)
-       ome(id) = phi/(tauv+0.5)+(1.d0-phi)/(taul+0.5)
+       tau=phi*tauv+(1.d0-phi)*taul
+       ome(id) = 1.d0/(tau+0.5d0)
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
 
@@ -203,7 +204,7 @@ contains
        enddo
        do ind=0,dim-1
           u(id*dim+ind)=(u(id*dim+ind)+&
-               0.5*dt*(dcrho(id*dim+ind)/3.d0-rho(id)*dccp(id*dim+ind)))/rho(id)
+               0.5*(dcrho(id*dim+ind)/3.d0-rho(id)*dccp(id*dim+ind)))/rho(id)
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -330,12 +331,12 @@ contains
     !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:uxmax,uxmin,uymax,uymin,uzmax,uzmin,pmax,pmin) private(id) reduction(max:uxmax,uymax,uzmax,pmax) reduction(min:uxmmin,uymin,uzmin,pmin) schedule(static,1)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
-       uxmax=max(uxmax,dcrho(id*dim))
-       uxmin=min(uxmin,dcrho(id*dim))
-       uymax=max(uymax,dcrho(id*dim+1))
-       uymin=min(uymin,dcrho(id*dim+1))
-       uzmax=max(uzmax,dcrho(id*dim+2))
-       uzmin=min(uzmin,dcrho(id*dim+2))
+       uxmax=max(uxmax,u(id*dim))
+       uxmin=min(uxmin,u(id*dim))
+       uymax=max(uymax,u(id*dim+1))
+       uymin=min(uymin,u(id*dim+1))
+       uzmax=max(uzmax,u(id*dim+2))
+       uzmin=min(uzmin,u(id*dim+2))
        cpmax=max(cpmax,cp(id))      
        cpmin=min(cpmin,cp(id))
        rhomax=max(rhomax,rho(id))      
@@ -440,8 +441,8 @@ contains
           do j=0,local_length(2)-1
              do i=0,local_length(1)-1      
                 buffer(i+j*local_length(1)+k*local_length(1)*local_length(2)+1)=&
-                     dcrho(((i+ghost)+dy*(j+ghost)+dz*(k+ghost))*dim+ind)!&
-                     !/(charlength*t_intv)!Unit conversion
+                     u(((i+ghost)+dy*(j+ghost)+dz*(k+ghost))*dim+ind)&
+                     /(charlength*t_intv)!Unit conversion
              enddo
           enddo
        enddo
@@ -497,7 +498,6 @@ contains
     double precision,dimension(0:array_size*dim-1),intent(out)::dval
     integer id,idn,iq,ind
     double precision diff
-    call PassD(val)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do ind=0,dim-1
@@ -521,7 +521,6 @@ contains
     double precision,dimension(0:array_size*dim-1),intent(out)::dval
     integer id,idn,iq,ind
     double precision diff
-    call PassD(val)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do ind=0,dim-1
@@ -531,7 +530,7 @@ contains
           diff=0.25d0*(5.d0*val(id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))&
                -3.d0*val(id)&
                -val(id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))&
-               -val(id-2*e(iq*dim)-2*dy*e(iq*dim+1)-2*dz*e(iq*dim+2)))
+               -val(id+2*e(iq*dim)+2*dy*e(iq*dim+1)+2*dz*e(iq*dim+2)))
           do ind=0,dim-1
              dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
           enddo

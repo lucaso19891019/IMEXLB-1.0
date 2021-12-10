@@ -202,7 +202,7 @@ contains
   subroutine InitUP
     !This subroutine initializes velocity and pressure fields. This suboutine can be offloaded to devices.
     integer i,j,k,x,y,z,id
-    double precision dis1, dis2, phi
+    double precision dis1, dis2, phi, tau
     
     
     
@@ -227,8 +227,9 @@ contains
 
              
              rho(id) = phi*rhov+(1.d0-phi)*rhol
-           
-             ome(id) = phi/(tauv+0.5)+(1.d0-phi)/(taul+0.5)
+
+             tau=phi*tauv+(1.d0-phi)*taul
+             ome(id) = 1.d0/(tau+0.5d0)
              
              cp(id)=0.d0
 
