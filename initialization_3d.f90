@@ -5,20 +5,23 @@ module initialization
   use omp_lib
   implicit none
 
+  !dy: The index increase in 1D arrays reshaped from 3D arrays per 1 y-coordinate increment.
+  !dy: The index increase in 1D arrays reshaped from 3D arrays per 1 z-coordinate increment.
   integer dy,dz
 
   !charlength: characteristic length
-  !pos: cylinder flow geometry related: position of cylinder in x-direction
-  !re: Reynolds number
-  !uu: characteristic velocity magnitude
-  !ma: Mach number
+  !pos1: center position of droplet 1
+  !pos2: center position of droplet 2
+  !beta: a constant that is related to the compressibility of bulk phases
   !radius: cylinder flow geometry related: cylinder radius, half of charlength in this case
-  double precision charlength,pos1,pos2,radius,beta
-  !nu: kinematic viscosity
-  !rho: fluid density
+  double precision charlength,pos1,pos2,beta,radius
+  
+  !rhol: liquid density
+  !rhov: vapor density
   !dt: time increment
-  !ome: relaxation parameter 1/(tau+0.5)
-  !tau: relaxation time
+  !taul: liquid relaxation time
+  !tauv: vapor relaxation time
+  !ep: interface thickness
   !t_intv: dimensionless time increment
   !inter: time interval size(dimensionless) for monitor/output
   !max_t: maximum time(dimensionless)
@@ -38,7 +41,10 @@ module initialization
   !f,fb: PDF and backup PDF arrays
   double precision,dimension(:),allocatable::f,fb
 
-  !p: pressure array
+  !rho: density array
+  !ome: relaxation frequency array
+  !cp: chemical potential array
+  !lap: laplacian array
   double precision,dimension(:),allocatable::rho,ome,cp,lap
   
   !Vector that store fluid bulk points' indices:
@@ -47,12 +53,16 @@ module initialization
   integer size_fluid
 
   !u: velocity array
+  !dcrho: central gradient array of density
+  !dmrho: mixed gradient array of density
+  !dccp: central gradient array of chemical potential
+  !dmcp: mixed gradient array of chemiical potential
   double precision,dimension(:),allocatable::u,dcrho,dmrho,dccp,dmcp
 
   
        
 contains
-  !DataInput: This subroutine reads data from "input.in", and generates derived initial data.
+  !DataInput: This subroutine reads data from "input_3d.in", and generates derived initial data.
   subroutine DataInput
     
     open(100,file='input_3d.in',status='old')
@@ -62,10 +72,10 @@ contains
     charlength=charlength*nx
     pos1=pos1*nx
     pos2=pos2*nx
-    !Read relaxation parameter
+    !Read relaxation time, density, time increment and interface thickness
     read(100,*)taul,tauv,dt,rhol,rhov,ep
  
-    !Read max time
+    !Read max time and output interval
     read(100,*)max_t,inter
     
     close(100)
@@ -75,6 +85,7 @@ contains
     
     radius=charlength*0.5d0
 
+    !Convert time to number of steps:
     t_intv=sqrt(rhol*radius**3*12.d0/((rhol-rhov)**4*beta*ep))
     interv=inter*t_intv
     max_step=max_t*t_intv
@@ -83,7 +94,8 @@ contains
     if(rank.eq.0)then
 
        write(*,'(A24,F6.2)')   "Characteristic Length :",charlength
-       write(*,'(A24,F6.2)')   "Sigma                 :",(rhol-rhov)**4*ep*beta/12.d0
+       write(*,'(A24,F6.2)')   "Interface Thickness   :",ep
+       write(*,'(A24,F6.2)')   "Surface Tension Sigma :",(rhol-rhov)**4*ep*beta/12.d0
   
        write(*,'(A24,F6.2)')   "Relaxation Time Liquid:",taul
        write(*,'(A24,F6.2)')   "Relaxation Time Vapor :",tauv
@@ -170,7 +182,7 @@ contains
   !SetGeometry: This subroutine initializes the flag array according to the given geometry
   subroutine SetGeometry 
     integer i,j,k,x,y,z,id,idn
-    
+    ! dy and dz are global variables that are generated here, and should not be modified in other subroutines or functiions, dx is 1 and thus not needed.
     dy=(local_length(1)+2*ghost)
     dz=(local_length(1)+2*ghost)*(local_length(2)+2*ghost)
     idn=0
@@ -183,9 +195,10 @@ contains
              z=k+local_start(3)
              !Coordinates obtained.
 
+             !Convert 3D coordinates to 1D index
              id=(i+ghost)+dy*(j+ghost)+dz*(k+ghost)
 
-
+             !Store fluid bulk IDs in vector fluid_id 
              fluid_id(idn)=id
              idn=idn+1                                
           enddo
@@ -206,8 +219,8 @@ contains
     
     
     
-    !Initilize momentum, pressure
-    !$OMP TARGET TEAMS DISTRIBUTE collapse(3) map(to:r_vec) private(r,z,id)
+    !Initilize density, relaxation frequency and chemical potential
+    !$OMP TARGET TEAMS DISTRIBUTE collapse(3) private(x,y,z,id,dis1,dis2,phi)
     do k=0,local_length(3)-1
        do j=0,local_length(2)-1
           do i=0,local_length(1)-1
@@ -222,7 +235,7 @@ contains
              !Sphere
              dis1=sqrt(dble((x-nx/2.d0)**2+(y-pos1+ep/2)**2+(z-nz/2.d0)**2))-radius
              dis2=sqrt(dble((x-nx/2.d0)**2+(y-pos2-ep/2)**2+(z-nz/2.d0)**2))-radius
-
+             !phi: phase field
              phi=(tanh(2.d0*min(dis1,dis2)/ep)+1.d0)*0.5d0
 
              

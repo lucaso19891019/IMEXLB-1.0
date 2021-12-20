@@ -18,6 +18,15 @@ contains
   !udu: magnitude of velocity squared
   !edu: inner product of physical velocity and lattice velocity
   !feq: equalibrium distributions
+  !gamma: feq/rho
+  !eddrhoc: inner product of lattice velocity and central gradient of density
+  !eddcpc: inner product of lattice velocity and central gradient of chemical potential
+  !uddrhoc: inner product of fluid velocity and central gradient of density
+  !uddcpc: inner product of fluid velocity and central gradient of chemical potential
+  !eddrhom: inner product of lattice velocity and mixed gradient of density
+  !eddcpm: inner product of lattice velocity and mixed gradient of chemical potential
+  !uddrhom: inner product of fluid velocity and mixed gradient of density
+  !uddcpm: inner product of fluid velocity and mixed gradient of chemical potential
 
   !---------------------------------------------
   !InitPDF: This subroutine initializes the PDFs. This subroutine can be offloaded to devices.
@@ -25,20 +34,25 @@ contains
     integer idn,id,iq,ind
     double precision udu,edu,gamma,eddrhoc,eddcpc,uddrhoc,uddcpc
 
+    !Evaluate chemical potential
     call Laplacian
-
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        cp(id)=2.d0*beta*((rho(id)-rhol)*(rho(id)-rhov)*(2.d0*rho(id)-rhol-rhov)&
             -(ep*(rhol-rhov)/4.d0)**2*lap(id))
     enddo
+    !$OMP END TARGET TEAMS DISTRIBUTE
+    !$OMP TARGET UPDATE from(cp)
     call PassD(cp)
-    
+    !$OMP TARGET UPDATE to(cp)
+
+    !Evaluate central gradients of density and chemical potential
     call GradC(dcrho,rho)
     call GradC(dccp,cp)
     
     !Initialize PDF
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu) 
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu,uddrhoc,uddcpc,gamma,eddrhoc,eddcpc) 
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
@@ -77,10 +91,11 @@ contains
     integer idn,id,iq,ind
     double precision udu,edu,feq,gamma,eddrhoc,eddcpc,uddrhoc,uddcpc,eddrhom,eddcpm,uddrhom,uddcpm
 
+    !Evaluate mixed gradients of density and chemical potential
     call GradM(dmrho,rho)
     call GradM(dmcp,cp)
     
-    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu,feq)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq,udu,edu,gamma,feq,uddrhoc,uddcpc,uddrhom,uddcpm,eddrhoc,eddcpc,eddrhom,eddcpm)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        udu=0.d0
@@ -165,6 +180,7 @@ contains
     integer idn,id,iq,ind
     double precision phi,tau
 
+    !Density
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
@@ -172,25 +188,32 @@ contains
        do iq=0,nq-1
           rho(id)=rho(id)+f(id*nq+iq)
        enddo
+       !phase field
        phi=(rhol-rho(id))/(rhol-rhov)
+       !relaxation time/frequency
        tau=phi*tauv+(1.d0-phi)*taul
        ome(id) = 1.d0/(tau+0.5d0)
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
 
+    !Evaluate chemical potential
     call Laplacian
-
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        cp(id)=2.d0*beta*((rho(id)-rhol)*(rho(id)-rhov)*(2.d0*rho(id)-rhol-rhov)&
             -(ep*(rhol-rhov)/4.d0)**2*lap(id))
     enddo
+    !$OMP END TARGET TEAMS DISTRIBUTE
+    !$OMP TARGET UPDATE from(cp)
     call PassD(cp)
+    !$OMP TARGET UPDATE to(cp)
 
+    !Evalute central gradients of density and chemical potential
     call GradC(dcrho,rho)
     call GradC(dccp,cp)
     
-    
+    !Velocity
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,iq)
     do idn=0,size_fluid-1
        id=fluid_id(idn)      
@@ -253,7 +276,7 @@ contains
     
     double precision, dimension(:),allocatable:: buffer
 
-    !$OMP TARGET UPDATE from(u,p)
+    !$OMP TARGET UPDATE from(u,rho,cp)
 
     write(num,'(I3.3)')count
     write(filename,'(A)')"output_"//num//".plt"
@@ -328,7 +351,7 @@ contains
     rhomax=0.5d0
     rhomin=0.5d0
     !OpenMP reduction
-    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:uxmax,uxmin,uymax,uymin,uzmax,uzmin,pmax,pmin) private(id) reduction(max:uxmax,uymax,uzmax,pmax) reduction(min:uxmmin,uymin,uzmin,pmin) schedule(static,1)
+    !$OMP TARGET TEAMS DISTRIBUTE PARALLEL DO map(tofrom:uxmax,uxmin,uymax,uymin,uzmax,uzmin,rhomax,rhomin,cpmax,cpmin) private(id) reduction(max:uxmax,uymax,uzmax,rhomax,cpmax) reduction(min:uxmmin,uymin,uzmin,rhomin,cpmin) schedule(static,1)
     do idn=1,size_fluid-1
        id=fluid_id(idn)
        uxmax=max(uxmax,u(id*dim))
@@ -477,7 +500,10 @@ contains
   subroutine Laplacian
     integer id,idn,iq
     double precision diff
+    !$OMP TARGET UPDATE from(rho)
     call PassD(rho)
+    !$OMP TARGET UPDATE to(rho)
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,diff)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        lap(id)=0.d0
@@ -489,6 +515,7 @@ contains
        enddo
        lap(id)=lap(id)*3.d0
     enddo
+    !$OMP END TARGET TEAMS DISTRIBUTE
   endsubroutine Laplacian
 
   !------------------------------------------------------
@@ -498,6 +525,7 @@ contains
     double precision,dimension(0:array_size*dim-1),intent(out)::dval
     integer id,idn,iq,ind
     double precision diff
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,diff)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do ind=0,dim-1
@@ -509,9 +537,9 @@ contains
           do ind=0,dim-1
              dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
           enddo
-       enddo
-       
+       enddo       
     enddo
+    !$OMP END TARGET TEAMS DISTRIBUTE
   endsubroutine GradC
 
   !------------------------------------------------------
@@ -521,6 +549,7 @@ contains
     double precision,dimension(0:array_size*dim-1),intent(out)::dval
     integer id,idn,iq,ind
     double precision diff
+    !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,ind,diff)
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do ind=0,dim-1
@@ -534,10 +563,9 @@ contains
           do ind=0,dim-1
              dval(id*dim+ind)=dval(id*dim+ind)+t(iq)*diff*e(iq*dim+ind)*3.d0
           enddo
-       enddo
-       
+       enddo      
     enddo
-
+    !$OMP END TARGET TEAMS DISTRIBUTE
     
   endsubroutine GradM
   

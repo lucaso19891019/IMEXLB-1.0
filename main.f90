@@ -25,7 +25,7 @@ program main
   
   !OpenMP GPU parallelization: global offloading
   gpuid=mod(rank,8)+1!# of GPU per node: 8
-  !$OMP TARGET ENTER DATA map(to:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id) device(gpuid)
+  !$OMP TARGET ENTER DATA map(to:t,e,local_length,local_start,f,fb,rho,u,ome,lap,dcrho,dccp,dmrho,dmcp,fluid_id) device(gpuid)
   !Device number to be changed for cross node implementations.
   
   !Initialize u,p
@@ -59,7 +59,7 @@ program main
   !Write results to file
   !call WriteBinary
 
-  !$OMP TARGET EXIT DATA map(delete:t,e,local_length,local_start,f,fb,p,u,geo,bl,br,bu,bd,b_user,fluid_id)
+  !$OMP TARGET EXIT DATA map(delete:t,e,local_length,local_start,f,fb,rho,u,ome,lap,dcrho,dccp,dmrho,dmcp,fluid_id)
 
   !Deallocate arrays
   call DeAllocateArrays
