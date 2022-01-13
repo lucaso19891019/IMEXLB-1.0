@@ -167,6 +167,9 @@ contains
   subroutine SetGeometry 
     integer i,j,id,idn,x,y,idl,idr,idu,idd,id_user,iq
     logical flag
+    ! dy is a global variable that is generated here, and should not be modified in other subroutines or functiions, dx is 1 and thus not needed.
+    dy=(local_length(1)+2*ghost)
+    
     idn=0
     idl=0
     idr=0
@@ -177,7 +180,7 @@ contains
        do i=0,local_length(1)+2
           x=i-1
           y=j-1
-          id=(i-1+ghost)+(local_length(1)+2*ghost)*(j-1+ghost)
+          id=(i-1+ghost)+dy*(j-1+ghost)
           
           if(x>=0.and.x<local_length(1).and.y>=0.and.y<local_length(2))then
              x=x+local_start(1)
@@ -231,7 +234,7 @@ contains
     do idn=0,size_fluid-1
        id=fluid_id(idn)
        do iq=0,nq-1
-          if(geo(id)==0.and.geo(id+e(iq*dim)+(local_length(1)+2*ghost)*(iq*dim+1))==1)then
+          if(geo(id)==0.and.geo(id+e(iq*dim)+dy*(iq*dim+1))==1)then
              b_user(id_user)=id
              id_user=id_user+1
              flag=.true.
@@ -261,7 +264,7 @@ contains
     do j=0,local_length(2)-1
        do i=0,local_length(1)-1
 
-          id=i+ghost+(local_length(1)+2*ghost)*(j+ghost)
+          id=i+ghost+dy*(j+ghost)
           !Perturbation
           r=1.d0+(r_vec(mod(id,100))-0.5d0)*2.d0*0.2d0
           y=j+local_start(2)
