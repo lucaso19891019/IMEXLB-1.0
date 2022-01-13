@@ -38,7 +38,7 @@ module initialization
 
   !p: pressure array
   double precision,dimension(:),allocatable::p
-  !flag: geometry flag array
+  !geo: geometry flag array
   integer,dimension(:),allocatable::geo
   !Vectors that store boundary points' indices: l-left, r-right, u-top, d-bottom, _user-user defined
   integer,dimension(:),allocatable::bl,br,bu,bd,b_user
