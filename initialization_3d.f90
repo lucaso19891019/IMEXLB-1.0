@@ -6,7 +6,7 @@ module initialization
   implicit none
 
   !dy: The index increase in 1D arrays reshaped from 3D arrays per 1 y-coordinate increment.
-  !dy: The index increase in 1D arrays reshaped from 3D arrays per 1 z-coordinate increment.
+  !dz: The index increase in 1D arrays reshaped from 3D arrays per 1 z-coordinate increment.
   integer dy,dz
 
   !charlength: characteristic length
