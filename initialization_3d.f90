@@ -44,6 +44,7 @@ module initialization
   integer,dimension(:),allocatable::bl,br,bu,bd,bf,bb,b_user
   !Vector that store fluid bulk points' indices:
   integer,dimension(:),allocatable::fluid_id
+  !dy: Index change
   !Size of index vectors
   integer size_fluid,l_size,r_size,u_size,d_size,f_size,b_size,user_size
 
