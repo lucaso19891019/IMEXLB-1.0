@@ -44,6 +44,8 @@ module initialization
   integer,dimension(:),allocatable::bl,br,bu,bd,b_user
   !Vector that store fluid bulk points' indices:
   integer,dimension(:),allocatable::fluid_id
+  !dy: The index increase in 1D arrays reshaped from 3D arrays per 1 y-coordinate increment.
+  integer dy
   !Size of index vectors
   integer size_fluid,l_size,r_size,u_size,d_size,user_size
 
