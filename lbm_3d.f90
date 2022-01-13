@@ -85,7 +85,7 @@ contains
     do idn=0,size_fluid-1
        id=fluid_id(idn)      
        do iq=0,nq-1
-          f(id*nq+iq)=fb((id-e(iq*dim)-(local_length(1)+2*ghost)*e(iq*dim+1)-(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+iq)
+          f(id*nq+iq)=fb((id-e(iq*dim)-dy*e(iq*dim+1)-dz*e(iq*dim+2))*nq+iq)
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -107,7 +107,7 @@ contains
     do idn=0,u_size-1
        id=bu(idn)
        do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
+          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*dy*e(iq*dim+1)+2*dz*e(iq*dim+2))*nq+nq-1-iq)        
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -117,7 +117,7 @@ contains
     do idn=0,d_size-1
        id=bd(idn)
        do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
+          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*dy*e(iq*dim+1)+2*dz*e(iq*dim+2))*nq+nq-1-iq)        
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -129,7 +129,7 @@ contains
     do idn=0,user_size-1
        id=b_user(idn)
        do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*(local_length(1)+2*ghost)*e(iq*dim+1)+2*(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+nq-1-iq)        
+          fb(id*nq+iq) = fb((id+2*e(iq*dim)+2*dy*e(iq*dim+1)+2*dz*e(iq*dim+2))*nq+nq-1-iq)        
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -149,7 +149,7 @@ contains
     do idn=0,r_size-1
        id=br(idn)
        do iq=0,nq-1
-          fb(id*nq+iq) = fb((id+e(iq*dim)+(local_length(1)+2*ghost)*e(iq*dim+1)+(local_length(1)+2*ghost)*(local_length(2)+2*ghost)*e(iq*dim+2))*nq+iq)        
+          fb(id*nq+iq) = fb((id+e(iq*dim)+dy*e(iq*dim+1)+dz*e(iq*dim+2))*nq+iq)        
        enddo
     enddo
     !$OMP END TARGET TEAMS DISTRIBUTE
@@ -187,7 +187,7 @@ contains
     !$OMP TARGET TEAMS DISTRIBUTE private(idn,id,y)
     do idn=0,l_size-1
        id=bl(idn)+1
-       z=id/((local_length(1)+2*ghost)*(local_length(2)+2*ghost))-ghost+local_start(3)
+       z=id/dz-ghost+local_start(3)
        u(id*dim)=uu*rho0*4.d0*z*(nz-z)/nz**2
        u(id*dim+1)=0.d0
     enddo
