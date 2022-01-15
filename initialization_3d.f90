@@ -252,20 +252,27 @@ contains
     !User defined boundary (sphere)
     flag=.false.
     id_user=0
-    do idn=0,size_fluid-1
-       id=fluid_id(idn)
-       do iq=0,nq-1
-          if(geo(id)==0.and.geo(id+e(iq*dim)+dy*(iq*dim+1)+dz*(iq*dim+2))==1)then
-             b_user(id_user)=id
-             id_user=id_user+1
-             flag=.true.
+    do k=0,local_length(3)+2
+    do j=0,local_length(2)+2
+       do i=0,local_length(1)+2
+          x=i-1
+          y=j-1
+          z=k-1
+          id=(i-1+ghost)+dy*(j-1+ghost)+dz*(k-1+ghost)
+          do iq=0,nq-1
+             if(geo(id)==0.and.geo(id+e(iq*dim)+dy*(iq*dim+1)+dz*(iq*dim+2))==1)then
+                b_user(id_user)=id
+                id_user=id_user+1
+                flag=.true.
+                exit
+             endif
+          enddo
+          if(flag)then
+             flag=.false.
              exit
           endif
        enddo
-       if(flag)then
-          flag=.false.
-          exit
-       endif
+    enddo
     enddo
     user_size=id_user
     
