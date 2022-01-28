@@ -14,7 +14,7 @@ Geng Liu, Saumil Patel, Ramesh Balakrishnan and Taehun Lee. IMEXLBM 1.0: A Proxy
 ## Code Characteristics 
 * Written in Fortran 90
 * MPI+OpenMP hybrid parallelism with GPU offloading directives 
-* 2D (D2Q9) and 3D (D3Q19) problems 
+* 2D (D2Q9) and 3D (D3Q27) problems 
 * Example problem is flow past a circle (2D) and sphere(3D) 
 
 ## Building
