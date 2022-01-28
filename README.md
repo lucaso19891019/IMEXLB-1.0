@@ -8,9 +8,6 @@ For this project, in particular, the IMEXLB ProxyApp suite will consist of Fortr
 ## Background
 LBM is a relatively novel approach to solve the Navier-Stokes equations (NSE) in the low-Mach number regime. The governing equation can be derived from the Boltzmann equation after discretizing the phase space with constant microscopic lattice velocities. One major drive behind the use of LBM in the CFD community is the ease of parallelization, but the increasing popularity of LBM can also be attributed to its unique feature: LBM solves a simplified Boltzmann equation that is essentially a set of 1st-order hyperbolic PDEs with constant microscopic lattice velocities, for which a plethora of simple yet excellent discretization schemes are available. Furthermore, all the complex non-linear effects are modeled locally at the grid points.
 
-## Paper
-Geng Liu, Saumil Patel, Ramesh Balakrishnan and Taehun Lee. IMEXLBM 1.0: A Proxy Application based on the Lattice Boltzmann Method for solving Computational Fluid Dynamic problems on GPUs. 	arXiv:2201.11330
-
 ## Code Characteristics 
 * Written in Fortran 90
 * MPI+OpenMP hybrid parallelism with GPU offloading directives 
@@ -45,8 +42,9 @@ IMEXLBM is released under the BSD 3-clause license (see LICENSE file). All new c
 ## Acknowledgments
 This research was supported by the Exascale Computing Project (17-SC-20-SC), a joint project of the U.S. Department of Energy's Office of Science and National Nuclear Security Administration, responsible for delivering a capable exascale ecosystem, including software, applications, and hardware technology, to support the nation's exascale computing imperative.
 
-If you want to cite IMEXLB please use: 
->David F. Richards, et al., “,FY21 Proxy App Suite Release: Report for ECP Proxy App Project Milestone ADCD504-12” LLNL-TR-827482, Sept. 2021.https://proxyapps.exascaleproject.org/wp-content/uploads/2021/10/proxyReport21.pdf
+If you want to cite IMEXLBM please use: 
+>David F. Richards, et al., “FY21 Proxy App Suite Release: Report for ECP Proxy App Project Milestone ADCD504-12” LLNL-TR-827482, Sept. 2021. https://proxyapps.exascaleproject.org/wp-content/uploads/2021/10/proxyReport21.pdf
+>Geng Liu, Saumil Patel, Ramesh Balakrishnan and Taehun Lee, “IMEXLBM 1.0: A Proxy Application based on the Lattice Boltzmann Method for solving Computational Fluid Dynamic problems on GPUs”, Jan. 2022. https://arXiv:2201.11330
 
 ## Development Team
 Points of contact for further assistance - Geng Liu (gliu@anl.gov), Taehun Lee (thlee@ccny.cuny.edu), Saumil Patel (spatel@anl.gov), Ramesh Balakrishnan (bramesh@anl.gov).
