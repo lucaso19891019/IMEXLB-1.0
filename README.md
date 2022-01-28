@@ -45,7 +45,7 @@ This research was supported by the Exascale Computing Project (17-SC-20-SC), a j
 If you want to cite IMEXLBM please use: 
 >David F. Richards, et al., “FY21 Proxy App Suite Release: Report for ECP Proxy App Project Milestone ADCD504-12” LLNL-TR-827482, Sept. 2021. https://proxyapps.exascaleproject.org/wp-content/uploads/2021/10/proxyReport21.pdf
 >
->Geng Liu, Saumil Patel, Ramesh Balakrishnan and Taehun Lee, “IMEXLBM 1.0: A Proxy Application based on the Lattice Boltzmann Method for solving Computational Fluid Dynamic problems on GPUs”, Jan. 2022. https://arXiv:2201.11330
+>Geng Liu, Saumil Patel, Ramesh Balakrishnan and Taehun Lee, “IMEXLBM 1.0: A Proxy Application based on the Lattice Boltzmann Method for solving Computational Fluid Dynamic problems on GPUs” arXiv:2201.11330, Jan. 2022. https://arxiv.org/abs/2201.11330
 
 ## Development Team
 Points of contact for further assistance - Geng Liu (gliu@anl.gov), Taehun Lee (thlee@ccny.cuny.edu), Saumil Patel (spatel@anl.gov), Ramesh Balakrishnan (bramesh@anl.gov).
